@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🔥 Project Prometheus
+# Project Prometheus
 
 ### Accelerating Ancient Scroll Discovery Through Distributed, Uncertainty-Aware AI
 
@@ -10,7 +10,7 @@
 
 > **The idea:** We cannot safely unroll the carbonized scrolls of Herculaneum. AI can help detect hidden ink in CT scans—but model predictions vary, and running many configurations is expensive. **Prometheus uses distributed GPU computing to investigate that uncertainty and test where additional computation is most valuable.**
 
-## 📜 The Challenge
+## 📜 The Challenge 📜 
 
 Nearly 2,000 years after the eruption of Mount Vesuvius, many carbonized papyrus scrolls from Herculaneum remain unreadable. Researchers use CT imaging and virtual unwrapping to investigate their contents without physically opening them. Distinguishing ancient ink from carbonized papyrus remains difficult.
 
@@ -37,7 +37,7 @@ flowchart LR
 
 We evaluated **18 inference configurations**: two scroll sections × three model checkpoints × three CT depth windows. We then independently analyzed the resulting prediction images and evaluated an offline adaptive-refinement strategy.
 
-## 📊 Results at a Glance
+## 📊 Results at a Glance 📊 
 
 | Metric | Result |
 |:--|--:|
@@ -60,7 +60,7 @@ Changing the **model checkpoint** caused approximately **2.2–2.4× more binary
 
 **Important:** Disagreement measures differences among predictions, **not** whether a prediction correctly identifies real ink.
 
-## 🎯 Finding 2 — Focus computation on contested regions
+## 🎯 Finding 2 — Focus computation on contested regions 🎯
 
 ![E7 adaptive refinement comparison](assets/e7-adaptive.png)
 
@@ -70,7 +70,7 @@ The strategy refined approximately **57% of usable tile area** while covering **
 
 This supports the potential of **uncertainty-aware compute allocation**, but it does **not yet demonstrate measured GPU-time savings or better ground-truth ink accuracy**.
 
-## 🔁 Finding 3 — Results are independently reproducible
+## 🔁 Finding 3 — Results are independently reproducible 🔁 
 
 We reanalyzed the full-resolution E6 predictions outside the distributed environment and reproduced the reported metrics. The analysis uses an explicit valid-pixel mask, a strict ink threshold of `p > 0.5`, and consistent definitions for disagreement and score variability.
 
@@ -83,7 +83,7 @@ python -u scripts/compare_predictions.py \
 
 *This command assumes the experiment exports and Python dependencies are available locally.*
 
-## 🌍 Why It Matters
+## 🌍 Scientific Significance and Impact 🌍
 
 The Vesuvius Challenge is ultimately about recovering lost writing from fragile ancient scrolls. Our contribution addresses the **research workflow around ink detection**: distributing computationally demanding experiments, quantifying where predictions are sensitive, and exploring whether follow-up computation can be allocated more intelligently.
 
