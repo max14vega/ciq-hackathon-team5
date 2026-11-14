@@ -8,10 +8,6 @@
 
 *Distributed GPU inference · Reproducible science · Adaptive compute allocation*
 
-</div>
-
-![Project Prometheus visual overview](assets/project-overview.png)
-
 > **The idea:** We cannot safely unroll the carbonized scrolls of Herculaneum. AI can help detect hidden ink in CT scans—but model predictions vary, and running many configurations is expensive. **Prometheus uses distributed GPU computing to investigate that uncertainty and test where additional computation is most valuable.**
 
 ## 📜 The Challenge
