@@ -19,7 +19,7 @@ Our focus is **not** to claim that we deciphered new text. We ask two practical 
 1. **Which modeling choices cause ink predictions to change?**
 2. **Can we prioritize expensive follow-up analysis where predictions are most uncertain?**
 
-## ⚙️ Our Approach
+## ⚙️ Our Approach ⚙️ 
 
 ```mermaid
 flowchart LR
@@ -52,7 +52,7 @@ We evaluated **18 inference configurations**: two scroll sections × three model
 
 *The 1.61× figure is an **estimate** based on summed task durations divided by observed experiment wall time; it is not a controlled single-node benchmark.*
 
-## 🔬 Finding 1 — AI model choice matters
+## 🔬 Finding 1 — AI model choice matters 🔬
 
 ![E6 checkpoint versus depth disagreement](assets/e6-disagreement.png)
 
