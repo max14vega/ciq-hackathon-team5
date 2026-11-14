@@ -1,0 +1,8 @@
+{
+  "shape_match": true,
+  "max_abs_diff_0_255": 1.0,
+  "mean_abs_diff_0_255": 0.02921592816710472,
+  "pct_pixels_identical": 97.07840722495895,
+  "pct_pixels_within_2_levels": 100.0,
+  "correlation": 0.9999919811364694
+}

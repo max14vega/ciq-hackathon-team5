@@ -1,0 +1,18 @@
+{
+  "segment": "w043",
+  "ours": {
+    "w043_step-075000": {
+      "shape": [
+        6120,
+        8120
+      ],
+      "mean_score": 0.3678467273712158,
+      "corr_with_official": 0.3963251435199365
+    }
+  },
+  "official": "/data/segments/w043/ink-detection/PHerc0139-20260112000000-2.399um-0.22m-78keV-volume-20260102150214-20260417190342-new_canon_autoresearch_recipe-tile256-stride128.tif",
+  "official_shape": [
+    23760,
+    31600
+  ]
+}

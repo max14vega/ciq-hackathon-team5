@@ -1,0 +1,11 @@
+== task 2 ==
+kernel: 6.18.43-2.1.el9_clk.aarch64+clk6.18  arch: aarch64
+proc/version: Linux version 6.18.43-2.1.el9_clk.aarch64+clk6.18 (mockbuild@build-a01.sb.privsea.ciq.dev) (gcc (GCC) 11.5.0 20240719 (Red Hat 11.5.0-14), GNU ld version 2.35.2-72.el9) #1 SMP PREEMPT_DYNAMIC Wed Aug 26 17:24:36 UTC 2026
+name, driver_version, memory.total [MiB]
+NVIDIA GB10, 580.173.02, [N/A]
+Sat Nov 14 19:50:19 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 580.173.02             Driver Version: 580.173.02     CUDA Version: 13.0     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+cpus visible: 2

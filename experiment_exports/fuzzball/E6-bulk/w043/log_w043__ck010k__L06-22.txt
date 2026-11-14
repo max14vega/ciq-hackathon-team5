@@ -1,0 +1,64 @@
+/usr/local/lib/python3.12/dist-packages/torch/__init__.py:1605: UserWarning: Please use the new API settings to control TF32 behavior, such as torch.backends.cudnn.conv.fp32_precision = 'tf32' or torch.backends.cuda.matmul.fp32_precision = 'ieee'. Old settings, e.g, torch.backends.cuda.matmul.allow_tf32 = True, torch.backends.cudnn.allow_tf32 = True, allowTF32CuDNN() and allowTF32CuBLAS() will be deprecated after Pytorch 2.9. Please see https://pytorch.org/docs/main/notes/cuda.html#tensorfloat-32-tf32-on-ampere-and-later-devices (Triggered internally at /opt/pytorch/pytorch/aten/src/ATen/Context.cpp:80.)
+  _C._set_float32_matmul_precision(precision)
+[2026-11-14 19:34:53,047] INFO Checkpoint /data/models/ink_9um/hybrid_3d2d-seed42/step-010000.pth requested AMP dtype=float16 from config.mixed_precision='fp16'.
+[2026-11-14 19:35:00,395] INFO Loaded checkpoint /data/models/ink_9um/hybrid_3d2d-seed42/step-010000.pth using model weights (missing_keys=0 unexpected_keys=0)
+[2026-11-14 19:35:00,675] INFO torch.compile disabled.
+[2026-11-14 19:35:00,675] INFO Using device cuda for inference.
+[2026-11-14 19:35:00,675] INFO Configured model source=koine_machines.training.train roi_size=128 in_chans=17 preprocessing=tifxyz_robust compile=False
+[2026-11-14 19:35:00,675] INFO Running input=/data/segments/w043/surface.zarr output=/data/results/E6-bulk/w043/w043__ck010k__L06-22.tif direction=forward
+[2026-11-14 19:35:00,687] INFO Selected source layer indices=[6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]
+[2026-11-14 19:35:00,690] INFO Input level=0 shape=(depth=28, height=6120, width=8120) chunks=(128, 128) patch=128 stride=64 requested_overlap=0.500 blend_mode=hann tiff_tile=(128, 128) in_chans=17 layer_order=forward tta_axes=()
+[2026-11-14 19:35:00,690] INFO No mask supplied. Using the entire zarr.
+[2026-11-14 19:35:00,875] INFO Using occupancy scan level=3 shape=(765, 1015) scale=(8, 8) nonempty_coverage=87.354%
+[2026-11-14 19:35:00,930] INFO Selected 11006 patches for inference.
+[2026-11-14 19:35:00,982] INFO Using temporary store /tmp/ome_zarr_infer_oc2guw94
+[2026-11-14 19:35:01,041] INFO CUDA autocast enabled for inference with dtype=float16.
+[2026-11-14 19:35:01,041] INFO Mirror TTA disabled.
+Using dimensionality (2D) from ConfigManager
+Using 2D convolutions (nn.Conv2d)
+Using 2D normalization (nn.InstanceNorm2d)
+--- Full autoconfiguration from config ---
+Patch size adjusted from (128, 128) to (128, 128) to ensure divisibility by pooling factors [32 32]
+Task 'ink' configured with shared decoder + head (1 channels)
+NetworkFromConfig initialized with final configuration:
+  model_name: ink_det
+  basic_encoder_block: BasicBlockD
+  basic_decoder_block: ConvBlock
+  bottleneck_block: BasicBlockD
+  features_per_stage: [32, 64, 128, 256, 320, 320]
+  num_stages: 6
+  n_blocks_per_stage: [1, 3, 4, 6, 6, 6]
+  n_conv_per_stage_decoder: [1, 1, 1, 1, 1]
+  kernel_sizes: [[3, 3], [3, 3], [3, 3], [3, 3], [3, 3], [3, 3]]
+  pool_op_kernel_sizes: [[1, 1], [2, 2], [2, 2], [2, 2], [2, 2], [2, 2]]
+  conv_op: Conv2d
+  conv_bias: True
+  norm_op: InstanceNorm2d
+  norm_op_kwargs: {'affine': True, 'eps': 1e-05}
+  dropout_op: None
+  dropout_op_kwargs: None
+  nonlin: LeakyReLU
+  nonlin_kwargs: {'inplace': True, 'negative_slope': 0.01}
+  strides: [[1, 1], [2, 2], [2, 2], [2, 2], [2, 2], [2, 2]]
+  return_skips: True
+  do_stem: True
+  stem_channels: 32
+  bottleneck_channels: None
+  stochastic_depth_p: 0.0
+  squeeze_excitation: False
+  squeeze_excitation_reduction_ratio: 0.0625
+  squeeze_excitation_type: channel
+  squeeze_excitation_add_maxpool: False
+  pool_type: conv
+  op_dims: 2
+  patch_size: (128, 128)
+  batch_size: 64
+  in_channels: 32
+  autoconfigure: True
+  targets: {'ink': {'activation': 'none', 'out_channels': 1, 'z_projection_mode': 'none'}}
+  target_z_projection: {}
+  separate_decoders: False
+  num_pool_per_axis: [5, 5]
+  must_be_divisible_by: [32 32]
+Infer:   0%|          | 0/86 [00:00<?, ?block/s]Infer:   1%|          | 1/86 [00:29<41:44, 29.46s/block]Infer:   2%|▏         | 2/86 [00:29<17:25, 12.44s/block]Infer:   3%|▎         | 3/86 [00:30<09:37,  6.95s/block]Infer:   5%|▍         | 4/86 [00:30<05:58,  4.37s/block]Infer:   6%|▌         | 5/86 [00:31<03:56,  2.92s/block]Infer:   7%|▋         | 6/86 [00:31<02:43,  2.04s/block]Infer:   8%|▊         | 7/86 [00:31<01:57,  1.49s/block]Infer:   9%|▉         | 8/86 [00:32<01:27,  1.12s/block]Infer:  10%|█         | 9/86 [00:32<01:08,  1.12block/s]Infer:  12%|█▏        | 10/86 [00:32<00:54,  1.39block/s]Infer:  13%|█▎        | 11/86 [00:33<00:45,  1.64block/s]Infer:  14%|█▍        | 12/86 [00:33<00:39,  1.90block/s]Infer:  15%|█▌        | 13/86 [00:33<00:34,  2.12block/s]Infer:  16%|█▋        | 14/86 [00:34<00:31,  2.30block/s]Infer:  17%|█▋        | 15/86 [00:34<00:29,  2.44block/s]Infer:  19%|█▊        | 16/86 [00:35<00:27,  2.55block/s]Infer:  20%|█▉        | 17/86 [00:35<00:26,  2.62block/s]Infer:  21%|██        | 18/86 [00:35<00:25,  2.67block/s]Infer:  22%|██▏       | 19/86 [00:36<00:24,  2.74block/s]Infer:  23%|██▎       | 20/86 [00:36<00:23,  2.76block/s]Infer:  24%|██▍       | 21/86 [00:36<00:23,  2.81block/s]Infer:  26%|██▌       | 22/86 [00:37<00:22,  2.80block/s]Infer:  27%|██▋       | 23/86 [00:37<00:22,  2.84block/s]Infer:  28%|██▊       | 24/86 [00:37<00:22,  2.81block/s]Infer:  29%|██▉       | 25/86 [00:38<00:21,  2.84block/s]Infer:  30%|███       | 26/86 [00:38<00:21,  2.82block/s]Infer:  31%|███▏      | 27/86 [00:38<00:20,  2.84block/s]Infer:  33%|███▎      | 28/86 [00:39<00:20,  2.79block/s]Infer:  34%|███▎      | 29/86 [00:39<00:20,  2.82block/s]Infer:  35%|███▍      | 30/86 [00:39<00:19,  2.81block/s]Infer:  36%|███▌      | 31/86 [00:40<00:19,  2.83block/s]Infer:  37%|███▋      | 32/86 [00:40<00:19,  2.81block/s]Infer:  38%|███▊      | 33/86 [00:41<00:18,  2.83block/s]Infer:  40%|███▉      | 34/86 [00:41<00:18,  2.82block/s]Infer:  41%|████      | 35/86 [00:41<00:18,  2.77block/s]Infer:  42%|████▏     | 36/86 [00:42<00:17,  2.80block/s]Infer:  43%|████▎     | 37/86 [00:42<00:17,  2.82block/s]Infer:  44%|████▍     | 38/86 [00:42<00:17,  2.77block/s]Infer:  45%|████▌     | 39/86 [00:43<00:16,  2.77block/s]Infer:  47%|████▋     | 40/86 [00:43<00:16,  2.75block/s]Infer:  48%|████▊     | 41/86 [00:43<00:16,  2.76block/s]Infer:  49%|████▉     | 42/86 [00:44<00:15,  2.81block/s]Infer:  50%|█████     | 43/86 [00:44<00:15,  2.81block/s]Infer:  51%|█████     | 44/86 [00:44<00:14,  2.82block/s]Infer:  52%|█████▏    | 45/86 [00:45<00:17,  2.36block/s]Infer:  53%|█████▎    | 46/86 [00:45<00:15,  2.51block/s]Infer:  55%|█████▍    | 47/86 [00:46<00:15,  2.57block/s]Infer:  56%|█████▌    | 48/86 [00:46<00:14,  2.68block/s]Infer:  57%|█████▋    | 49/86 [00:47<00:19,  1.91block/s]Infer:  58%|█████▊    | 50/86 [00:47<00:16,  2.13block/s]Infer:  59%|█████▉    | 51/86 [00:48<00:15,  2.28block/s]Infer:  60%|██████    | 52/86 [00:48<00:13,  2.45block/s]Infer:  62%|██████▏   | 53/86 [00:49<00:20,  1.58block/s]Infer:  63%|██████▎   | 54/86 [00:50<00:17,  1.84block/s]Infer:  64%|██████▍   | 55/86 [00:50<00:15,  2.03block/s]Infer:  65%|██████▌   | 56/86 [00:50<00:13,  2.24block/s]Infer:  66%|██████▋   | 57/86 [00:51<00:12,  2.38block/s]Infer:  67%|██████▋   | 58/86 [00:51<00:11,  2.53block/s]Infer:  69%|██████▊   | 59/86 [00:51<00:10,  2.61block/s]Infer:  70%|██████▉   | 60/86 [00:52<00:09,  2.70block/s]Infer:  71%|███████   | 61/86 [00:52<00:12,  1.99block/s]Infer:  72%|███████▏  | 62/86 [00:53<00:10,  2.19block/s]Infer:  73%|███████▎  | 63/86 [00:53<00:10,  2.22block/s]Infer:  74%|███████▍  | 64/86 [00:54<00:09,  2.39block/s]Infer:  76%|███████▌  | 65/86 [00:54<00:09,  2.33block/s]Infer:  77%|███████▋  | 66/86 [00:54<00:08,  2.48block/s]Infer:  78%|███████▊  | 67/86 [00:55<00:07,  2.58block/s]Infer:  79%|███████▉  | 68/86 [00:55<00:06,  2.66block/s]Infer:  80%|████████  | 69/86 [00:56<00:09,  1.75block/s]Infer:  81%|████████▏ | 70/86 [00:56<00:08,  1.97block/s]Infer:  83%|████████▎ | 71/86 [00:57<00:06,  2.17block/s]Infer:  84%|████████▎ | 72/86 [00:57<00:06,  2.31block/s]Infer:  85%|████████▍ | 73/86 [00:58<00:05,  2.44block/s]Infer:  86%|████████▌ | 74/86 [00:58<00:04,  2.55block/s]Infer:  87%|████████▋ | 75/86 [00:58<00:04,  2.64block/s]Infer:  88%|████████▊ | 76/86 [00:59<00:03,  2.70block/s]Infer:  90%|████████▉ | 77/86 [01:00<00:06,  1.44block/s]Infer:  91%|█████████ | 78/86 [01:00<00:04,  1.70block/s]Infer:  92%|█████████▏| 79/86 [01:01<00:03,  1.95block/s]Infer:  93%|█████████▎| 80/86 [01:01<00:02,  2.17block/s]Infer:  94%|█████████▍| 81/86 [01:01<00:02,  2.37block/s]Infer:  95%|█████████▌| 82/86 [01:02<00:01,  2.51block/s]Infer:  97%|█████████▋| 83/86 [01:02<00:01,  2.63block/s]Infer:  98%|█████████▊| 84/86 [01:02<00:00,  2.69block/s]Infer:  99%|█████████▉| 85/86 [01:03<00:00,  2.76block/s]Infer: 100%|██████████| 86/86 [01:03<00:00,  2.79block/s]Infer: 100%|██████████| 86/86 [01:03<00:00,  1.35block/s]
+[2026-11-14 19:36:06,313] INFO Wrote /data/results/E6-bulk/w043/w043__ck010k__L06-22.tif

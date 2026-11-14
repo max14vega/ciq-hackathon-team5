@@ -1,0 +1,11 @@
+{
+  "run": "seq1",
+  "tasks": 3,
+  "per_task_s": [
+    476,
+    469,
+    475
+  ],
+  "sum_task_seconds": 1420,
+  "experiment_wall_clock_s": 1422
+}

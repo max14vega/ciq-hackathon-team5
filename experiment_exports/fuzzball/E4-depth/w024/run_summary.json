@@ -1,0 +1,11 @@
+{
+  "experiment": "E4-depth",
+  "tasks": 3,
+  "per_task_s": {
+    "L04-20": 77,
+    "L06-22": 78,
+    "L08-24": 79
+  },
+  "sum_task_seconds": 234,
+  "experiment_wall_clock_s": 157
+}

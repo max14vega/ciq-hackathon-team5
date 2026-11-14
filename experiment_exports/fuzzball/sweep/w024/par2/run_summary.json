@@ -1,0 +1,11 @@
+{
+  "run": "par2",
+  "tasks": 3,
+  "per_task_s": [
+    475,
+    485,
+    485
+  ],
+  "sum_task_seconds": 1445,
+  "experiment_wall_clock_s": 961
+}
