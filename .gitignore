@@ -1,0 +1,18 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+
+# Large datasets and model checkpoints
+data/*
+!data/README.md
+checkpoints/
+
+# Generated outputs
+predictions/
+results/
+logs/
+
+# Local environment
+.env
