@@ -1,50 +1,98 @@
-# ciq-hackathon-team5
+<div align="center">
 
-# Project Prometheus
-**Accelerating Ancient Scroll Discovery Through Distributed, Uncertainty-Aware AI**
+# 🔥 Project Prometheus
 
-### The Problem: Recovering Lost History at Scale
+### Accelerating Ancient Scroll Discovery Through Distributed, Uncertainty-Aware AI
 
-Nearly 2,000 years after Mount Vesuvius buried the ancient city of Herculaneum, hundreds of carbonized papyrus scrolls remain largely unreadable. Physically opening them risks destroying their contents, so researchers rely on high-resolution CT scans and artificial intelligence to detect hidden ink.
+**CIQ Fuzzball Hackathon · Vesuvius Challenge**
 
-However, ink-detection models are computationally expensive to run, and their predictions can vary depending on model checkpoints, scan depths, and classification thresholds. Researchers need scalable infrastructure to process these scans and reproducible methods to understand where AI predictions are reliable or uncertain.
+*Distributed GPU inference · Reproducible science · Adaptive compute allocation*
 
-### Our Solution
+</div>
 
-**Project Prometheus** combines CIQ Fuzzball, distributed GPU inference, and uncertainty-aware analysis to make ancient scroll research more scalable, reproducible, and computationally targeted.
+![Project Prometheus visual overview](assets/project-overview.png)
 
-Using pretrained Vesuvius Challenge ink-detection models, we orchestrated inference across two NVIDIA GB10 GPU nodes with VAST shared storage. We systematically varied model checkpoints and CT depth windows, measured prediction disagreement, and evaluated an adaptive strategy that prioritizes additional analysis in uncertain regions.
+> **The idea:** We cannot safely unroll the carbonized scrolls of Herculaneum. AI can help detect hidden ink in CT scans—but model predictions vary, and running many configurations is expensive. **Prometheus uses distributed GPU computing to investigate that uncertainty and test where additional computation is most valuable.**
 
-### Measurable Results
+## 📜 The Challenge
+
+Nearly 2,000 years after the eruption of Mount Vesuvius, many carbonized papyrus scrolls from Herculaneum remain unreadable. Researchers use CT imaging and virtual unwrapping to investigate their contents without physically opening them. Distinguishing ancient ink from carbonized papyrus remains difficult.
+
+Our focus is **not** to claim that we deciphered new text. We ask two practical questions:
+
+1. **Which modeling choices cause ink predictions to change?**
+2. **Can we prioritize expensive follow-up analysis where predictions are most uncertain?**
+
+## ⚙️ Our Approach
+
+```mermaid
+flowchart LR
+    A[Herculaneum CT scans] --> B[(VAST shared storage)]
+    B --> C[CIQ Fuzzball orchestration]
+    C --> D[GPU node 1 · NVIDIA GB10]
+    C --> E[GPU node 2 · NVIDIA GB10]
+    D --> F[Ink prediction outputs]
+    E --> F
+    F --> G[E6 · Uncertainty analysis]
+    F --> H[E7 · Adaptive refinement evaluation]
+    G --> I[Reproducible scientific findings]
+    H --> I
+```
+
+We evaluated **18 inference configurations**: two scroll sections × three model checkpoints × three CT depth windows. We then independently analyzed the resulting prediction images and evaluated an offline adaptive-refinement strategy.
+
+## 📊 Results at a Glance
 
 | Metric | Result |
-|---|---|
-| Distributed inference workloads | 18 GPU jobs across 2 nodes |
-| Estimated parallel speedup | **1.61×** versus summed sequential task runtimes |
-| Prediction pixels analyzed | **86.8 million** across 2 scroll sections |
-| Checkpoint-induced disagreement | **32.00% / 29.77%** |
-| Depth-induced disagreement | **14.65% / 12.36%** |
-| Adaptive improvement over random selection | **16.5% / 20.5%** lower reference disagreement at the six-pass budget |
-| Independent reproducibility | Local analysis reproduced distributed experiment metrics |
+|:--|--:|
+| Distributed inference workloads | **18 jobs / 2 GPU nodes** |
+| E6 experiment wall time | **909 seconds** |
+| Estimated speedup vs. summed task runtimes | **1.61×** |
+| Valid pixels analyzed across two sections | **86.8 million** |
+| Checkpoint variation disagreement | **32.00%** (w024) · **29.77%** (w043) |
+| Depth variation disagreement | **14.65%** (w024) · **12.36%** (w043) |
+| E7 adaptive reduction in reference disagreement vs. random, six-pass budget | **16.5%** (w024) · **20.5%** (w043) |
+| Independent reproducibility | **E6 metrics reproduced locally** |
 
-### Key Scientific Findings
+*The 1.61× figure is an **estimate** based on summed task durations divided by observed experiment wall time; it is not a controlled single-node benchmark.*
 
-**1. Model checkpoint selection matters more than scan depth.** Changing the model checkpoint produced approximately 2.2–2.4 times as much binary prediction disagreement as changing the CT depth window in our controlled comparisons.
+## 🔬 Finding 1 — AI model choice matters
 
-**2. Uncertainty can guide computational priorities.** Our adaptive-selection experiment concentrated additional analysis on regions with conflicting predictions. At the six-pass compute budget, it covered approximately 73–75% of contested pixels while refining about 57% of usable tile area.
+![E6 checkpoint versus depth disagreement](assets/e6-disagreement.png)
 
-**3. Scientific results can be independently reproduced.** We validated the distributed inference outputs through a separate local analysis pipeline, confirming the reported disagreement and uncertainty metrics.
+Changing the **model checkpoint** caused approximately **2.2–2.4× more binary prediction disagreement** than changing the CT depth window in our controlled three-configuration comparisons. This identifies a major source of model sensitivity and helps motivate systematic evaluation rather than relying on a single prediction.
 
-### Why CIQ Fuzzball Matters
+**Important:** Disagreement measures differences among predictions, **not** whether a prediction correctly identifies real ink.
 
-CIQ Fuzzball enabled us to coordinate multiple AI inference configurations across GPU resources, transforming a computationally intensive research task into a repeatable, distributed experimental workflow.
+## 🎯 Finding 2 — Focus computation on contested regions
 
-Our experiments demonstrate how orchestration infrastructure can support not only faster scientific computation, but also systematic experimentation, uncertainty analysis, and reproducibility.
+![E7 adaptive refinement comparison](assets/e7-adaptive.png)
 
-### Impact and Future Potential
+In an **offline adaptive-selection evaluation**, we used two pilot predictions to identify regions for further analysis. At a budget equivalent to six full inference passes, adaptive refinement produced **16.5% and 20.5% less disagreement with the full-model reference** than random tile selection on w024 and w043, respectively.
 
-Project Prometheus does not claim to have deciphered ancient text or improved ground-truth ink-detection accuracy. Our adaptive results are based on offline comparisons with a full-model reference, and real-world GPU savings remain to be validated.
+The strategy refined approximately **57% of usable tile area** while covering **72.7% and 74.8% of contested pixels**. At the smallest tested budget, adaptive selection was **not consistently better** than uniform allocation.
 
-Instead, we demonstrate a promising foundation for **intelligent scientific compute allocation**: identify where AI predictions are unstable, prioritize those regions for further analysis, and make more effective use of limited computational resources.
+This supports the potential of **uncertainty-aware compute allocation**, but it does **not yet demonstrate measured GPU-time savings or better ground-truth ink accuracy**.
 
-**Our vision:** Help researchers analyze more scroll material, investigate uncertain regions more efficiently, and accelerate the effort to recover lost knowledge from antiquity.
+## 🔁 Finding 3 — Results are independently reproducible
+
+We reanalyzed the full-resolution E6 predictions outside the distributed environment and reproduced the reported metrics. The analysis uses an explicit valid-pixel mask, a strict ink threshold of `p > 0.5`, and consistent definitions for disagreement and score variability.
+
+```bash
+python -u scripts/compare_predictions.py \
+  --input-root experiment_exports/fuzzball/E6-bulk \
+  --output-root results/E6-independent-analysis \
+  --chunk-rows 64
+```
+
+*This command assumes the experiment exports and Python dependencies are available locally.*
+
+## 🌍 Why It Matters
+
+The Vesuvius Challenge is ultimately about recovering lost writing from fragile ancient scrolls. Our contribution addresses the **research workflow around ink detection**: distributing computationally demanding experiments, quantifying where predictions are sensitive, and exploring whether follow-up computation can be allocated more intelligently.
+
+**Prometheus brings together scalable orchestration and scientific uncertainty analysis to help make future scroll research more efficient, transparent, and reproducible.**
+
+---
+
+<sub>**Scientific scope:** w024 is a held-out segment; w043 is a trained-on sanity-check segment, not an independent validation set. Prediction scores are uncalibrated. E7 comparisons use an AI-derived full-model reference, not verified ink labels. No new scroll decipherment or accuracy improvement is claimed.</sub>
