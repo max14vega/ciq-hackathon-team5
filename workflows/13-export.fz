@@ -1,0 +1,57 @@
+version: v4
+
+volumes:
+  data:
+    use: team5
+    name: prometheus-data
+    egress:
+      - source:
+          uri: file://export/final_light.zip
+        destination:
+          uri: fb://group/prometheus/final_light.zip
+      - source:
+          uri: file://export/final_E6_tifs.zip
+        destination:
+          uri: fb://group/prometheus/final_E6_tifs.zip
+
+jobs:
+  bundle:
+    image:
+      uri: docker://python:3.11
+    mounts:
+      /data: data
+    resource:
+      cpu:
+        cores: 2
+      memory:
+        size: 4GB
+    script: |
+      #!/bin/bash
+      set -euo pipefail
+      mkdir -p /data/export
+      cd /data
+      cat > /tmp/b.py <<'PYEOF'
+      import zipfile, glob, os, datetime, collections
+      allf = sorted(f for f in glob.glob("results/**/*", recursive=True) if os.path.isfile(f))
+      def small(f):
+          if f.endswith((".json", ".png", ".csv", ".txt")):
+              return os.path.getsize(f) < 50e6
+          return f.endswith(".tif") and "/analysis/" in f
+      light = [f for f in allf if small(f)]
+      light += sorted(f for f in glob.glob("scripts/**/*.py", recursive=True))
+      tifs = sorted(glob.glob("results/E6-bulk/*/w0*__*.tif"))
+      now = str(datetime.datetime.utcnow()) + " UTC\n"
+      for name, files in [("final_light.zip", light), ("final_E6_tifs.zip", tifs)]:
+          p = "export/" + name
+          with zipfile.ZipFile(p, "w", zipfile.ZIP_DEFLATED) as z:
+              for f in files:
+                  z.write(f)
+              z.writestr("MANIFEST.txt", "exported " + now + "\n".join(files))
+          print(name, len(files), "files", round(os.path.getsize(p) / 1e6, 1), "MB")
+      c = collections.Counter(f.split("/")[1] if f.startswith("results/") else f.split("/")[0] for f in light)
+      print("light zip contents by folder:")
+      for k, v in sorted(c.items()):
+          print("  %-28s %d files" % (k, v))
+      PYEOF
+      python /tmp/b.py
+      ls -lh /data/export

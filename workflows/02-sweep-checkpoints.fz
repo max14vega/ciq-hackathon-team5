@@ -1,0 +1,266 @@
+# 02-sweep.fz — MULTI-NODE EXPERIMENT (Phase 2+3: Accelerate + compare)
+#
+# Needs: 01-infer-baseline.fz succeeded once (so /data/venv exists).
+# Job "sweep": task array — each task runs a DIFFERENT checkpoint on the SAME
+#   segment, spread across both GB10s by Fuzzball (concurrency: 2).
+# Job "analyze": after all tasks finish, compares the predictions and writes
+#   metrics.json + disagreement / uncertainty maps to /data/results/sweep/<SEG>/analysis.
+#
+# EXPERIMENT KNOBS
+#   SEG=            which segment (in BOTH scripts)
+#   concurrency: 2  -> parallel on 2 nodes.  Set to 1 -> sequential baseline (same work).
+#   end: 3          -> number of checkpoints staged (stage-data pulled 3)
+#   RUN=            label for this run (e.g. par2 / seq1) so outputs don't overwrite
+
+version: v4
+
+volumes:
+  data:
+    use: team5
+    name: prometheus-data
+    egress:
+      - source:
+          uri: file://results/sweep/w024/par2/analysis/disagreement_map.png
+        destination:
+          uri: fb://group/prometheus/w024_par2_disagreement_map.png
+      - source:
+          uri: file://results/sweep/w024/par2/analysis/uncertainty_std.png
+        destination:
+          uri: fb://group/prometheus/w024_par2_uncertainty_std.png
+      - source:
+          uri: file://results/sweep/w024/par2/analysis/metrics.json
+        destination:
+          uri: fb://group/prometheus/w024_par2_metrics.json
+      - source:
+          uri: file://results/sweep/w024/par2/run_summary.json
+        destination:
+          uri: fb://group/prometheus/w024_par2_run_summary.json
+
+jobs:
+  sweep:
+    image:
+      uri: docker://nvcr.io/nvidia/pytorch:25.10-py3
+    mounts:
+      /data: data
+    resource:
+      cpu:
+        cores: 12
+      memory:
+        size: 48GB
+      devices:
+        nvidia.com/gpu: 1
+    task-array:
+      start: 1
+      end: 3
+      concurrency: 2
+    script: |
+      #!/bin/bash
+      set -euo pipefail
+      SEG=w024
+      RUN=par2
+      source /data/venv/bin/activate
+      cd /data/villa/ink-detection
+      CKPTS=($(ls /data/models/ink_9um/hybrid_3d2d-seed42/*.pth | sort))
+      CKPT=${CKPTS[$((FB_TASK_ID-1))]}
+      NAME=$(basename "$CKPT" .pth)
+      OUT=/data/results/sweep/$SEG/$RUN; mkdir -p $OUT
+      echo "task=$FB_TASK_ID segment=$SEG checkpoint=$NAME node=$(hostname) run=$RUN"
+      nvidia-smi --query-gpu=timestamp,utilization.gpu,memory.used,power.draw --format=csv -l 5 > $OUT/gpu_${NAME}.csv &
+      MON=$!
+      START=$(date +%s)
+      python -m koine_machines.inference.infer /data/segments/$SEG/surface.zarr "$CKPT" $OUT/${SEG}_${NAME}.tif --no-compile 2>&1 | tee $OUT/log_${NAME}.txt
+      END=$(date +%s)
+      kill $MON || true
+      printf '{"task":%s,"segment":"%s","checkpoint":"%s","node":"%s","run":"%s","start":%d,"end":%d,"wall_clock_s":%d}\n' \
+        $FB_TASK_ID $SEG $NAME $(hostname) $RUN $START $END $((END-START)) | tee $OUT/timing_${NAME}.json
+
+  analyze:
+    depends-on:
+      - name: sweep
+        status: FINISHED
+    image:
+      uri: docker://nvcr.io/nvidia/pytorch:25.10-py3
+    mounts:
+      /data: data
+    resource:
+      cpu:
+        cores: 8
+      memory:
+        size: 48GB
+    script: |
+      #!/bin/bash
+      set -euo pipefail
+      SEG=w024
+      RUN=par2
+      DIR=/data/results/sweep/$SEG/$RUN
+      source /data/venv/bin/activate
+      pip install -q tifffile pillow
+      mkdir -p /data/code
+      cat > /data/code/compare.py <<'PYEOF'
+      #!/usr/bin/env python3
+      """
+      compare.py — compare ink predictions from several model configurations.
+
+      What it does (plain English):
+        * Loads 2+ ink-prediction images (.tif) of the SAME scroll segment, each made
+          by a different checkpoint / depth window.
+        * Measures how much they agree (pixel agreement, IoU, correlation).
+        * Builds a per-pixel "uncertainty" map: where the configurations disagree.
+        * Optionally scores each prediction against hand labels (AUC), if given.
+        * Writes metrics.json + PNG images you can put straight on the one-sheet.
+
+      Usage:
+        python compare.py --out /data/results/sweep/analysis \
+            /data/results/sweep/w043_step-010000.tif /data/results/sweep/w043_step-040000.tif ...
+        Optional: --labels path/to/label.png_or_tif   --threshold 0.5   --max-png 2000
+      """
+      import argparse, json, itertools, os, time
+      import numpy as np
+      import tifffile
+      from PIL import Image
+
+      Image.MAX_IMAGE_PIXELS = None
+
+
+      def load_pred(path):
+          """Load a prediction and scale it to 0..1 floats, whatever dtype it was saved as."""
+          a = tifffile.imread(path)
+          a = np.squeeze(a)
+          if a.ndim == 3:                       # (C,H,W) or (H,W,C): take the first channel
+              a = a[0] if a.shape[0] < a.shape[-1] else a[..., 0]
+          if np.issubdtype(a.dtype, np.integer):
+              a = a.astype(np.float32) / np.iinfo(a.dtype).max
+          else:
+              a = a.astype(np.float32)
+              if a.max() > 1.0:                 # e.g. float 0..255
+                  a = a / a.max()
+          return a
+
+
+      def load_labels(path, shape):
+          if path.endswith((".tif", ".tiff")):
+              l = np.squeeze(tifffile.imread(path))
+          else:
+              l = np.array(Image.open(path).convert("L"))
+          if l.shape != shape:                  # resize labels to the prediction grid
+              l = np.array(Image.fromarray((l > 0).astype(np.uint8) * 255).resize(
+                  (shape[1], shape[0]), Image.NEAREST))
+          return l > 0
+
+
+      def auc(scores, labels):
+          """ROC AUC via ranks (Mann-Whitney U). No sklearn needed."""
+          pos, neg = labels.sum(), (~labels).sum()
+          if pos == 0 or neg == 0:
+              return None
+          order = scores.argsort(kind="mergesort")
+          ranks = np.empty(len(scores), dtype=np.float64)
+          ranks[order] = np.arange(1, len(scores) + 1)
+          return float((ranks[labels].sum() - pos * (pos + 1) / 2) / (pos * neg))
+
+
+      def to_png(arr, path, max_side, cmap=None):
+          """Save a 0..1 array as a (downscaled) PNG. cmap='heat' gives a black→red→yellow map."""
+          a = np.clip(np.nan_to_num(arr), 0, 1)
+          if cmap == "heat":
+              rgb = np.stack([np.clip(a * 2, 0, 1), np.clip(a * 2 - 1, 0, 1), np.zeros_like(a)], -1)
+              img = Image.fromarray((rgb * 255).astype(np.uint8), "RGB")
+          else:
+              img = Image.fromarray((a * 255).astype(np.uint8), "L")
+          s = max_side / max(img.size)
+          if s < 1:
+              img = img.resize((int(img.size[0] * s), int(img.size[1] * s)), Image.BILINEAR)
+          img.save(path)
+
+
+      def main():
+          p = argparse.ArgumentParser()
+          p.add_argument("preds", nargs="+", help="prediction .tif files (same segment)")
+          p.add_argument("--out", required=True)
+          p.add_argument("--labels", default=None)
+          p.add_argument("--threshold", type=float, default=0.5)
+          p.add_argument("--max-png", type=int, default=2000)
+          a = p.parse_args()
+          os.makedirs(a.out, exist_ok=True)
+          t0 = time.time()
+
+          names = [os.path.splitext(os.path.basename(f))[0] for f in a.preds]
+          preds = [load_pred(f) for f in a.preds]
+          shapes = {x.shape for x in preds}
+          if len(shapes) != 1:                  # crop to the common area if sizes differ slightly
+              h = min(s[0] for s in shapes); w = min(s[1] for s in shapes)
+              print(f"!! shapes differ {shapes}; cropping all to {(h, w)}")
+              preds = [x[:h, :w] for x in preds]
+          stack = np.stack(preds)               # (N, H, W)
+          valid = stack.max(0) > 0              # ignore pure-background pixels (outside the page)
+          print(f"{len(preds)} predictions, size {stack.shape[1:]}, valid pixels {valid.sum():,}")
+
+          binar = stack > a.threshold
+          vote = binar.mean(0)                  # fraction of configs that say "ink"
+          disagree = (vote > 0) & (vote < 1)    # at least one says ink and one says not
+          std = stack.std(0)
+
+          m = {
+              "configs": names,
+              "threshold": a.threshold,
+              "image_shape": list(stack.shape[1:]),
+              "valid_pixels": int(valid.sum()),
+              "per_config": {},
+              "pairwise": {},
+              "overall": {
+                  "pct_pixels_all_agree": float(100 * (1 - disagree[valid].mean())),
+                  "pct_pixels_disagree": float(100 * disagree[valid].mean()),
+                  "mean_score_std": float(std[valid].mean()),
+                  "pct_pixels_high_uncertainty_std_gt_0.2": float(100 * (std[valid] > 0.2).mean()),
+              },
+          }
+          for n, x, b in zip(names, stack, binar):
+              m["per_config"][n] = {"mean_score": float(x[valid].mean()),
+                                    "pct_pixels_ink": float(100 * b[valid].mean())}
+          for (i, ni), (j, nj) in itertools.combinations(enumerate(names), 2):
+              bi, bj = binar[i][valid], binar[j][valid]
+              inter, union = (bi & bj).sum(), (bi | bj).sum()
+              m["pairwise"][f"{ni} vs {nj}"] = {
+                  "pixel_agreement_pct": float(100 * (bi == bj).mean()),
+                  "ink_iou": float(inter / union) if union else None,
+                  "score_correlation": float(np.corrcoef(stack[i][valid], stack[j][valid])[0, 1]),
+              }
+
+          if a.labels and os.path.exists(a.labels):
+              lab = load_labels(a.labels, stack.shape[1:])
+              lv = lab[valid]
+              m["vs_labels"] = {n: {"auc": auc(x[valid], lv)} for n, x in zip(names, stack)}
+              m["vs_labels"]["ensemble_mean"] = {"auc": auc(stack.mean(0)[valid], lv)}
+
+          # Images for the one-sheet
+          for n, x in zip(names, stack):
+              to_png(x, os.path.join(a.out, f"pred_{n}.png"), a.max_png)
+          to_png(stack.mean(0), os.path.join(a.out, "ensemble_mean.png"), a.max_png)
+          to_png(std / max(std.max(), 1e-6), os.path.join(a.out, "uncertainty_std.png"), a.max_png, "heat")
+          to_png(disagree.astype(np.float32), os.path.join(a.out, "disagreement_map.png"), a.max_png, "heat")
+
+          m["analysis_seconds"] = round(time.time() - t0, 1)
+          with open(os.path.join(a.out, "metrics.json"), "w") as f:
+              json.dump(m, f, indent=2)
+          print(json.dumps(m["overall"], indent=2))
+          for k, v in m["pairwise"].items():
+              print(f"  {k}: agree {v['pixel_agreement_pct']:.1f}%  IoU {v['ink_iou']}  r={v['score_correlation']:.3f}")
+          if "vs_labels" in m:
+              print("  AUC vs labels:", {k: v["auc"] for k, v in m["vs_labels"].items()})
+          print("wrote", sorted(os.listdir(a.out)))
+
+
+      if __name__ == "__main__":
+          main()
+      PYEOF
+      # total experiment time = first task start -> last task end
+      python - "$DIR" <<'EOF'
+      import json, glob, sys
+      t = [json.load(open(f)) for f in glob.glob(sys.argv[1] + "/timing_*.json")]
+      span = max(x["end"] for x in t) - min(x["start"] for x in t)
+      s = {"run": t[0]["run"], "tasks": len(t), "nodes_used": sorted({x["node"] for x in t}),
+           "sum_task_seconds": sum(x["wall_clock_s"] for x in t), "experiment_wall_clock_s": span}
+      json.dump(s, open(sys.argv[1] + "/run_summary.json", "w"), indent=2); print(json.dumps(s, indent=2))
+      EOF
+      LABELS=$(ls /data/segments/$SEG/ink-labels/*.{png,tif} 2>/dev/null | head -1 || true)
+      python /data/code/compare.py --out $DIR/analysis ${LABELS:+--labels "$LABELS"} $DIR/${SEG}_*.tif

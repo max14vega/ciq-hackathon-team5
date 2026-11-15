@@ -1,0 +1,210 @@
+{
+  "experiment": "E8-pack",
+  "workers_per_process": 4,
+  "segments": {
+    "w024": {
+      "1": {
+        "concurrent_runs": 1,
+        "wall_s": 92.5,
+        "runs_per_hour": 38.9,
+        "gpu_util_mean_pct": 23.2,
+        "gpu_power_mean_w": 20.3,
+        "runs": [
+          {
+            "config": "ck010k__L04-20",
+            "rc": 0,
+            "run_s": 92.5,
+            "corr_vs_E6": 0.9999999999999999
+          }
+        ],
+        "throughput_vs_K1": 1.0
+      },
+      "2": {
+        "concurrent_runs": 2,
+        "wall_s": 87.1,
+        "runs_per_hour": 82.7,
+        "gpu_util_mean_pct": 57.8,
+        "gpu_power_mean_w": 33.5,
+        "runs": [
+          {
+            "config": "ck010k__L04-20",
+            "rc": 0,
+            "run_s": 85.9,
+            "corr_vs_E6": 0.9999999999999999
+          },
+          {
+            "config": "ck040k__L06-22",
+            "rc": 0,
+            "run_s": 87.1,
+            "corr_vs_E6": 1.0
+          }
+        ],
+        "throughput_vs_K1": 2.13
+      },
+      "3": {
+        "concurrent_runs": 3,
+        "wall_s": 125.0,
+        "runs_per_hour": 86.4,
+        "gpu_util_mean_pct": 70.9,
+        "gpu_power_mean_w": 37.8,
+        "runs": [
+          {
+            "config": "ck010k__L04-20",
+            "rc": 0,
+            "run_s": 124.0,
+            "corr_vs_E6": 0.9999999999999999
+          },
+          {
+            "config": "ck040k__L06-22",
+            "rc": 0,
+            "run_s": 123.6,
+            "corr_vs_E6": 1.0
+          },
+          {
+            "config": "ck075k__L08-24",
+            "rc": 0,
+            "run_s": 125.0,
+            "corr_vs_E6": 1.0
+          }
+        ],
+        "throughput_vs_K1": 2.22
+      },
+      "4": {
+        "concurrent_runs": 4,
+        "wall_s": 160.4,
+        "runs_per_hour": 89.8,
+        "gpu_util_mean_pct": 76.3,
+        "gpu_power_mean_w": 40.6,
+        "runs": [
+          {
+            "config": "ck010k__L04-20",
+            "rc": 0,
+            "run_s": 159.1,
+            "corr_vs_E6": 0.9999999999999999
+          },
+          {
+            "config": "ck040k__L06-22",
+            "rc": 0,
+            "run_s": 158.2,
+            "corr_vs_E6": 1.0
+          },
+          {
+            "config": "ck075k__L04-20",
+            "rc": 0,
+            "run_s": 159.8,
+            "corr_vs_E6": 1.0
+          },
+          {
+            "config": "ck075k__L08-24",
+            "rc": 0,
+            "run_s": 160.4,
+            "corr_vs_E6": 1.0
+          }
+        ],
+        "throughput_vs_K1": 2.31
+      }
+    },
+    "w043": {
+      "1": {
+        "concurrent_runs": 1,
+        "wall_s": 96.2,
+        "runs_per_hour": 37.4,
+        "gpu_util_mean_pct": 23.0,
+        "gpu_power_mean_w": 19.4,
+        "runs": [
+          {
+            "config": "ck010k__L04-20",
+            "rc": 0,
+            "run_s": 96.2,
+            "corr_vs_E6": 1.0
+          }
+        ],
+        "throughput_vs_K1": 1.0
+      },
+      "2": {
+        "concurrent_runs": 2,
+        "wall_s": 97.1,
+        "runs_per_hour": 74.2,
+        "gpu_util_mean_pct": 61.4,
+        "gpu_power_mean_w": 33.5,
+        "runs": [
+          {
+            "config": "ck010k__L04-20",
+            "rc": 0,
+            "run_s": 97.1,
+            "corr_vs_E6": 1.0
+          },
+          {
+            "config": "ck040k__L06-22",
+            "rc": 0,
+            "run_s": 96.7,
+            "corr_vs_E6": 0.9999999999999999
+          }
+        ],
+        "throughput_vs_K1": 1.98
+      },
+      "3": {
+        "concurrent_runs": 3,
+        "wall_s": 136.9,
+        "runs_per_hour": 78.9,
+        "gpu_util_mean_pct": 74.2,
+        "gpu_power_mean_w": 37.5,
+        "runs": [
+          {
+            "config": "ck010k__L04-20",
+            "rc": 0,
+            "run_s": 136.3,
+            "corr_vs_E6": 1.0
+          },
+          {
+            "config": "ck040k__L06-22",
+            "rc": 0,
+            "run_s": 136.9,
+            "corr_vs_E6": 0.9999999999999999
+          },
+          {
+            "config": "ck075k__L08-24",
+            "rc": 0,
+            "run_s": 134.8,
+            "corr_vs_E6": 1.0
+          }
+        ],
+        "throughput_vs_K1": 2.11
+      },
+      "4": {
+        "concurrent_runs": 4,
+        "wall_s": 178.2,
+        "runs_per_hour": 80.8,
+        "gpu_util_mean_pct": 78.1,
+        "gpu_power_mean_w": 39.2,
+        "runs": [
+          {
+            "config": "ck010k__L04-20",
+            "rc": 0,
+            "run_s": 178.2,
+            "corr_vs_E6": 1.0
+          },
+          {
+            "config": "ck040k__L06-22",
+            "rc": 0,
+            "run_s": 177.6,
+            "corr_vs_E6": 0.9999999999999999
+          },
+          {
+            "config": "ck075k__L04-20",
+            "rc": 0,
+            "run_s": 176.2,
+            "corr_vs_E6": 0.9999999999999998
+          },
+          {
+            "config": "ck075k__L08-24",
+            "rc": 0,
+            "run_s": 177.1,
+            "corr_vs_E6": 1.0
+          }
+        ],
+        "throughput_vs_K1": 2.16
+      }
+    }
+  }
+}

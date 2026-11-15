@@ -1,0 +1,35 @@
+{
+  "segments": [
+    "w024",
+    "w043"
+  ],
+  "files_scored": 18,
+  "sources_per_segment": "9 configs + mean9",
+  "tiles_ranked": 322,
+  "tile_px": 512,
+  "gpu_device": [
+    "cuda",
+    "cuda"
+  ],
+  "gpu_compute_s": 3.334,
+  "cpu_compute_s": 53.818,
+  "compute_speedup": 16.1,
+  "gpu_load_s": 3.693,
+  "cpu_load_s": 3.201,
+  "end_to_end_gpu_s": 7.027,
+  "end_to_end_cpu_s": 57.019,
+  "end_to_end_speedup": 8.11,
+  "two_node_wall_s": 3.616,
+  "gpu_util_mean_pct": 5.9,
+  "gpu_power_mean_w": 9.4,
+  "gpu_vs_cpu_rows_matched": 3740,
+  "max_abs_diff_gpu_vs_cpu": {
+    "papyrus_frac": 0.0,
+    "ink_frac": 0.0,
+    "decisiveness": 0.0,
+    "contrast": 1.6681121056683068e-07,
+    "edge": 3.2385074594243335e-08,
+    "stroke": 0.01115241635687747,
+    "agreement": 0.0
+  }
+}

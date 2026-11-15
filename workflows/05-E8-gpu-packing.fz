@@ -1,0 +1,158 @@
+version: v4
+
+volumes:
+  data:
+    use: team5
+    name: prometheus-data
+
+jobs:
+  pack:
+    image:
+      uri: docker://nvcr.io/nvidia/pytorch:25.10-py3
+    mounts:
+      /data: data
+    resource:
+      cpu:
+        cores: 16
+      memory:
+        size: 80GB
+      devices:
+        nvidia.com/gpu: 1
+    task-array:
+      start: 1
+      end: 2
+      concurrency: 2
+    script: |
+      #!/bin/bash
+      set -uo pipefail
+      SEGS=(w024 w043)
+      SEG=${SEGS[$((FB_TASK_ID-1))]}
+      CFGS=(ck010k__L04-20 ck040k__L06-22 ck075k__L08-24 ck075k__L04-20)
+      WORKERS=4
+      OUT=${OUT_ROOT:-/data/results/E8-pack}/$SEG
+      mkdir -p $OUT
+      echo "task=$FB_TASK_ID seg=$SEG host=$(hostname) cores=$(nproc)"
+      if [ -z "${DRY:-}" ]; then
+        source /data/venv/bin/activate
+        cd /data/villa/ink-detection
+      fi
+      infer_one() {
+        local CFG=$1 D=$2
+        local CK=${CFG%%__*} LY=${CFG##*__}
+        local LS=$((10#${LY:1:2}))
+        local LE=$((LS+17)) STEP
+        case $CK in
+          ck010k) STEP=010000 ;;
+          ck040k) STEP=040000 ;;
+          ck075k) STEP=075000 ;;
+        esac
+        local S=$(date +%s.%N)
+        if [ -n "${DRY:-}" ]; then
+          sleep 1; RC=0
+        else
+          python -m koine_machines.inference.infer /data/segments/$SEG/surface.zarr \
+            /data/models/ink_9um/hybrid_3d2d-seed42/step-$STEP.pth $D/${SEG}__${CFG}.tif \
+            --no-compile --num-workers $WORKERS --batch-size 128 \
+            --layer-start $LS --layer-end $LE > $D/log_$CFG.txt 2>&1
+          RC=$?
+        fi
+        echo "$CFG $RC $S $(date +%s.%N)" > $D/done_$CFG.txt
+      }
+      for K in 1 2 3 4; do
+        D=$OUT/K$K
+        mkdir -p $D
+        rm -f $D/done_*.txt
+        nvidia-smi --query-gpu=timestamp,utilization.gpu,power.draw \
+          --format=csv,noheader,nounits -l 1 > $D/gpu.csv 2>/dev/null &
+        SMI=$!
+        T0=$(date +%s.%N)
+        for j in $(seq 0 $((K-1))); do
+          infer_one ${CFGS[$j]} $D &
+        done
+        wait $(jobs -p | grep -v "^$SMI$")
+        T1=$(date +%s.%N)
+        kill $SMI 2>/dev/null
+        echo "$K $T0 $T1" > $D/batch.txt
+        echo "K=$K concurrent runs: wall $(python3 -c "print(round($T1-$T0,1))") s"
+        cat $D/done_*.txt
+      done
+      FAIL=$(cat $OUT/K*/done_*.txt | awk '$2!=0' | wc -l)
+      echo "failed runs: $FAIL"
+      exit 0  # always let analyze run; failures are reported in its table
+
+  analyze:
+    depends-on:
+      - name: pack
+        status: FINISHED
+    image:
+      uri: docker://nvcr.io/nvidia/pytorch:25.10-py3
+    mounts:
+      /data: data
+    resource:
+      cpu:
+        cores: 4
+      memory:
+        size: 32GB
+    script: |
+      #!/bin/bash
+      set -uo pipefail
+      source /data/venv/bin/activate
+      cat > /tmp/e8.py <<'PYEOF'
+      import json, os, glob
+      import numpy as np, tifffile
+      R = os.environ.get("R", "/data/results/E8-pack")
+      E6 = os.environ.get("E6", "/data/results/E6-bulk")
+      out = {"experiment": "E8-pack", "workers_per_process": 4, "segments": {}}
+      for seg in ["w024", "w043"]:
+          rows = {}
+          for K in [1, 2, 3, 4]:
+              d = R + "/" + seg + "/K" + str(K)
+              if not os.path.exists(d + "/batch.txt"):
+                  continue
+              _, t0, t1 = open(d + "/batch.txt").read().split()
+              wall = float(t1) - float(t0)
+              runs = []
+              for f in sorted(glob.glob(d + "/done_*.txt")):
+                  cfg, rc, s, e = open(f).read().split()
+                  r = {"config": cfg, "rc": int(rc), "run_s": round(float(e) - float(s), 1)}
+                  p = d + "/" + seg + "__" + cfg + ".tif"
+                  q = E6 + "/" + seg + "/" + seg + "__" + cfg + ".tif"
+                  if os.path.exists(p) and os.path.exists(q):
+                      a = tifffile.imread(p).astype(np.float32).ravel()
+                      b = tifffile.imread(q).astype(np.float32).ravel()
+                      r["corr_vs_E6"] = float(np.corrcoef(a, b)[0, 1])
+                  runs.append(r)
+              util, pw = [], []
+              for line in open(d + "/gpu.csv"):
+                  p = [x.strip() for x in line.split(",")]
+                  try:
+                      util.append(float(p[1]))
+                      pw.append(float(p[2]))
+                  except Exception:
+                      pass
+              rows[K] = {"concurrent_runs": K, "wall_s": round(wall, 1),
+                         "runs_per_hour": round(3600 * K / wall, 1),
+                         "gpu_util_mean_pct": round(float(np.mean(util)), 1) if util else None,
+                         "gpu_power_mean_w": round(float(np.mean(pw)), 1) if pw else None,
+                         "runs": runs}
+          if 1 in rows:
+              for K in rows:
+                  rows[K]["throughput_vs_K1"] = round(rows[K]["runs_per_hour"] / rows[1]["runs_per_hour"], 2)
+          out["segments"][seg] = {str(k): v for k, v in rows.items()}
+      json.dump(out, open(R + "/metrics.json", "w"), indent=2)
+      print(json.dumps(out, indent=2))
+      print("\nSUMMARY  (each process: 4 data workers, batch 128; all runs on one GB10 at once)")
+      for seg, rows in out["segments"].items():
+          print("==", seg, "==")
+          print("  K  wall_s  runs/hour  vs_K1  gpu_util%  power_W  min_corr_vs_E6  failed")
+          for K, r in rows.items():
+              cs = [x.get("corr_vs_E6") for x in r["runs"] if x.get("corr_vs_E6") is not None]
+              fl = sum(1 for x in r["runs"] if x["rc"] != 0)
+              print("  %s  %6.1f  %9.1f  %5.2f  %9s  %7s  %14s  %d" % (
+                  K, r["wall_s"], r["runs_per_hour"], r.get("throughput_vs_K1", 0),
+                  r["gpu_util_mean_pct"], r["gpu_power_mean_w"],
+                  ("%.5f" % min(cs)) if cs else "-", fl))
+      print("DONE")
+      PYEOF
+      echo "lines in script: $(wc -l < /tmp/e8.py) (expect 55)"
+      python /tmp/e8.py

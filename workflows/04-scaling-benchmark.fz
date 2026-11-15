@@ -1,0 +1,196 @@
+version: v4
+
+volumes:
+  data:
+    use: team5
+    name: prometheus-data
+    egress:
+      - source:
+          uri: file://results/scaling/scaling_benchmark.json
+        destination:
+          uri: fb://group/prometheus/scaling_benchmark.json
+
+jobs:
+  one-node:
+    image:
+      uri: docker://nvcr.io/nvidia/pytorch:25.10-py3
+    mounts:
+      /data: data
+    resource:
+      cpu:
+        cores: 12
+      memory:
+        size: 48GB
+      devices:
+        nvidia.com/gpu: 1
+    task-array:
+      start: 1
+      end: 18
+      concurrency: 1
+    script: |
+      #!/bin/bash
+      set -uo pipefail
+      PHASE=one
+      SEGS=(w024 w043)
+      STEPS=(010000 040000 075000)
+      CKT=(ck010k ck040k ck075k)
+      STARTS=(4 6 8)
+      i=$((FB_TASK_ID-1))
+      SEG=${SEGS[$((i/9))]}
+      C=$(((i%9)/3))
+      LS=${STARTS[$((i%3))]}
+      LE=$((LS+17))
+      TAG=$(printf "L%02d-%02d" $LS $((LS+16)))
+      NAME=${SEG}__${CKT[$C]}__${TAG}
+      CKPT=/data/models/ink_9um/hybrid_3d2d-seed42/step-${STEPS[$C]}.pth
+      OUT=/data/results/scaling/$PHASE/$SEG
+      mkdir -p $OUT
+      echo "phase=$PHASE task=$FB_TASK_ID name=$NAME"
+      source /data/venv/bin/activate
+      cd /data/villa/ink-detection
+      nvidia-smi --query-gpu=timestamp,utilization.gpu,power.draw --format=csv,noheader,nounits -l 1 > $OUT/gpu_$NAME.csv 2>/dev/null &
+      SMI=$!
+      START=$(date +%s)
+      python -m koine_machines.inference.infer /data/segments/$SEG/surface.zarr "$CKPT" \
+        $OUT/$NAME.tif --no-compile --num-workers 8 --batch-size 128 \
+        --layer-start $LS --layer-end $LE > $OUT/log_$NAME.txt 2>&1
+      RC=$?
+      END=$(date +%s)
+      kill $SMI 2>/dev/null
+      printf '{"phase":"%s","task":%s,"name":"%s","start":%d,"end":%d,"wall_clock_s":%d,"rc":%d}\n' \
+        $PHASE $FB_TASK_ID $NAME $START $END $((END-START)) $RC | tee $OUT/timing_$NAME.json
+      [ $RC -eq 0 ] || tail -20 $OUT/log_$NAME.txt
+      exit 0
+
+  two-node:
+    depends-on:
+      - name: one-node
+        status: FINISHED
+    image:
+      uri: docker://nvcr.io/nvidia/pytorch:25.10-py3
+    mounts:
+      /data: data
+    resource:
+      cpu:
+        cores: 12
+      memory:
+        size: 48GB
+      devices:
+        nvidia.com/gpu: 1
+    task-array:
+      start: 1
+      end: 18
+      concurrency: 2
+    script: |
+      #!/bin/bash
+      set -uo pipefail
+      PHASE=two
+      SEGS=(w024 w043)
+      STEPS=(010000 040000 075000)
+      CKT=(ck010k ck040k ck075k)
+      STARTS=(4 6 8)
+      i=$((FB_TASK_ID-1))
+      SEG=${SEGS[$((i/9))]}
+      C=$(((i%9)/3))
+      LS=${STARTS[$((i%3))]}
+      LE=$((LS+17))
+      TAG=$(printf "L%02d-%02d" $LS $((LS+16)))
+      NAME=${SEG}__${CKT[$C]}__${TAG}
+      CKPT=/data/models/ink_9um/hybrid_3d2d-seed42/step-${STEPS[$C]}.pth
+      OUT=/data/results/scaling/$PHASE/$SEG
+      mkdir -p $OUT
+      echo "phase=$PHASE task=$FB_TASK_ID name=$NAME"
+      source /data/venv/bin/activate
+      cd /data/villa/ink-detection
+      nvidia-smi --query-gpu=timestamp,utilization.gpu,power.draw --format=csv,noheader,nounits -l 1 > $OUT/gpu_$NAME.csv 2>/dev/null &
+      SMI=$!
+      START=$(date +%s)
+      python -m koine_machines.inference.infer /data/segments/$SEG/surface.zarr "$CKPT" \
+        $OUT/$NAME.tif --no-compile --num-workers 8 --batch-size 128 \
+        --layer-start $LS --layer-end $LE > $OUT/log_$NAME.txt 2>&1
+      RC=$?
+      END=$(date +%s)
+      kill $SMI 2>/dev/null
+      printf '{"phase":"%s","task":%s,"name":"%s","start":%d,"end":%d,"wall_clock_s":%d,"rc":%d}\n' \
+        $PHASE $FB_TASK_ID $NAME $START $END $((END-START)) $RC | tee $OUT/timing_$NAME.json
+      [ $RC -eq 0 ] || tail -20 $OUT/log_$NAME.txt
+      exit 0
+
+  compare:
+    depends-on:
+      - name: two-node
+        status: FINISHED
+    image:
+      uri: docker://nvcr.io/nvidia/pytorch:25.10-py3
+    mounts:
+      /data: data
+    resource:
+      cpu:
+        cores: 4
+      memory:
+        size: 16GB
+    script: |
+      #!/bin/bash
+      set -uo pipefail
+      source /data/venv/bin/activate
+      cat > /tmp/s.py <<'PYEOF'
+      import glob, json, os
+      import numpy as np, tifffile
+      B = "/data/results/scaling"
+      E6 = "/data/results/E6-bulk"
+      def load(phase):
+          return [json.load(open(f)) for f in glob.glob(B + "/" + phase + "/*/timing_*.json")]
+      def gpu(phase):
+          u, p = [], []
+          for f in glob.glob(B + "/" + phase + "/*/gpu_*.csv"):
+              for line in open(f):
+                  x = [q.strip() for q in line.split(",")]
+                  try:
+                      u.append(float(x[1])); p.append(float(x[2]))
+                  except Exception:
+                      pass
+          return (round(float(np.mean(u)), 1) if u else None, round(float(np.mean(p)), 1) if p else None)
+      out = {"experiment": "scaling benchmark: same 18 E6 jobs, 1 GPU at a time vs 2 nodes", "phases": {}}
+      for ph, gpus in [("one", 1), ("two", 2)]:
+          t = load(ph)
+          if not t:
+              continue
+          wall = max(x["end"] for x in t) - min(x["start"] for x in t)
+          s = sum(x["wall_clock_s"] for x in t)
+          ok = sum(1 for x in t if x["rc"] == 0)
+          u, p = gpu(ph)
+          out["phases"][ph] = {"gpus_used_at_once": gpus, "jobs_completed": ok, "jobs_total": len(t),
+                               "wall_clock_s": wall, "sum_job_s": s,
+                               "mean_job_s": round(s / len(t), 1), "min_job_s": min(x["wall_clock_s"] for x in t),
+                               "max_job_s": max(x["wall_clock_s"] for x in t),
+                               "throughput_jobs_per_min": round(60 * ok / wall, 3) if wall else None,
+                               "scheduling_overhead_s": round(wall - s / gpus, 1),
+                               "gpu_util_mean_pct": u, "gpu_power_mean_w": p,
+                               "per_job_s": {x["name"]: x["wall_clock_s"] for x in sorted(t, key=lambda z: z["name"])}}
+      if "one" in out["phases"] and "two" in out["phases"]:
+          a, b = out["phases"]["one"], out["phases"]["two"]
+          sp = a["wall_clock_s"] / b["wall_clock_s"]
+          out["measured_speedup"] = round(sp, 3)
+          out["throughput_improvement"] = round(b["throughput_jobs_per_min"] / a["throughput_jobs_per_min"], 3)
+          out["scaling_efficiency_pct"] = round(100 * sp / 2, 1)
+          out["mean_job_slowdown_on_two_nodes_pct"] = round(100 * (b["mean_job_s"] / a["mean_job_s"] - 1), 1)
+      chk = {}
+      for f in sorted(glob.glob(B + "/two/*/w0*__*.tif"))[:2]:
+          n = os.path.basename(f)[:-4]
+          seg = n[:4]
+          x = tifffile.imread(f).astype(np.float32).ravel()
+          y = tifffile.imread(E6 + "/" + seg + "/" + n + ".tif").astype(np.float32).ravel()
+          chk[n] = float(np.corrcoef(x, y)[0, 1])
+      out["outputs_match_E6_corr"] = chk
+      json.dump(out, open(B + "/scaling_benchmark.json", "w"), indent=2)
+      print(json.dumps({k: v for k, v in out.items() if k != "phases"}, indent=2))
+      for ph, v in out["phases"].items():
+          print(ph, {k: v[k] for k in v if k != "per_job_s"})
+      if "measured_speedup" in out:
+          print("\nSUMMARY: 1 GPU at a time %ds | 2 nodes %ds | speedup %.2fx | efficiency %.1f%% | throughput %.2f -> %.2f jobs/min" % (
+              out["phases"]["one"]["wall_clock_s"], out["phases"]["two"]["wall_clock_s"], out["measured_speedup"],
+              out["scaling_efficiency_pct"], out["phases"]["one"]["throughput_jobs_per_min"], out["phases"]["two"]["throughput_jobs_per_min"]))
+      print("DONE")
+      PYEOF
+      echo "lines in script: $(wc -l < /tmp/s.py) (expect 57)"
+      python /tmp/s.py

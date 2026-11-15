@@ -1,0 +1,201 @@
+import glob, json, os
+import numpy as np, tifffile
+from PIL import Image, ImageDraw
+from scipy import ndimage as ndi
+Image.MAX_IMAGE_PIXELS = None
+R = os.environ.get("R", "/data/results/E6-bulk")
+SG = os.environ.get("SG", "/data/segments")
+O = os.environ.get("O", "/data/results/labels-check")
+os.makedirs(O, exist_ok=True)
+seg = "w043"
+CK = ["ck010k", "ck040k", "ck075k"]
+LY = ["L04-20", "L06-22", "L08-24"]
+CROP = [3300, 1200, 5000, 5400]
+names = [c + "__" + l for c in CK for l in LY]
+import zarr
+import numcodecs
+
+def _decode(buf, codecs, cs, dt):
+    endian = "<"
+    transpose = None
+    for c in reversed(codecs):
+        n = c["name"]
+        cfg = c.get("configuration", {})
+        if n == "blosc":
+            buf = numcodecs.Blosc().decode(buf)
+        elif n == "zstd":
+            buf = numcodecs.Zstd().decode(buf)
+        elif n in ("gzip", "zlib"):
+            buf = numcodecs.GZip().decode(buf) if n == "gzip" else numcodecs.Zlib().decode(buf)
+        elif n == "crc32c":
+            buf = bytes(buf)[:-4]
+        elif n == "bytes":
+            endian = ">" if cfg.get("endian") == "big" else "<"
+        elif n == "transpose":
+            transpose = cfg.get("order")
+    arr = np.frombuffer(bytes(buf), dtype=dt.newbyteorder(endian)).reshape(cs)
+    if transpose:
+        arr = arr.transpose(np.argsort(transpose))
+    return arr
+
+def v3_read(apath):
+    meta = json.load(open(os.path.join(apath, "zarr.json")))
+    shape = meta["shape"]
+    cs = meta["chunk_grid"]["configuration"]["chunk_shape"]
+    dt = np.dtype(meta["data_type"])
+    codecs = meta.get("codecs", [])
+    enc = meta.get("chunk_key_encoding", {"name": "default", "configuration": {"separator": "/"}})
+    sep = enc.get("configuration", {}).get("separator", "/")
+    prefix = "c" + sep if enc.get("name", "default") == "default" else ""
+    fill = meta.get("fill_value", 0) or 0
+    out = np.full(shape, fill, dtype=dt)
+    shard = codecs[0] if codecs and codecs[0]["name"] == "sharding_indexed" else None
+    nchunks = [-(-shape[i] // cs[i]) for i in range(len(shape))]
+    for idx in np.ndindex(*nchunks):
+        key = prefix + sep.join(str(i) for i in idx)
+        fp = os.path.join(apath, *key.split("/"))
+        if not os.path.exists(fp):
+            continue
+        raw = open(fp, "rb").read()
+        base = [i * c for i, c in zip(idx, cs)]
+        if shard is None:
+            pieces = [(base, cs, _decode(raw, codecs, cs, dt))]
+        else:
+            cfg = shard["configuration"]
+            ics = cfg["chunk_shape"]
+            per = [cs[k] // ics[k] for k in range(len(cs))]
+            n = int(np.prod(per))
+            ic = cfg.get("index_codecs", [{"name": "bytes"}])
+            extra = 4 if any(c["name"] == "crc32c" for c in ic) else 0
+            isz = n * 16 + extra
+            ib = raw[-isz:] if cfg.get("index_location", "end") == "end" else raw[:isz]
+            index = np.frombuffer(ib[:n * 16], dtype="<u8").reshape(per + [2])
+            pieces = []
+            for j in np.ndindex(*per):
+                off, nb = index[j]
+                if off == 2 ** 64 - 1 or nb == 2 ** 64 - 1:
+                    continue
+                arr = _decode(raw[int(off):int(off) + int(nb)], cfg["codecs"], ics, dt)
+                pieces.append(([base[k] + j[k] * ics[k] for k in range(len(cs))], ics, arr))
+        for b0, shp, arr in pieces:
+            sl = tuple(slice(b0[k], min(b0[k] + shp[k], shape[k])) for k in range(len(shape)))
+            if any(x.start >= x.stop for x in sl):
+                continue
+            out[sl] = arr[tuple(slice(0, x.stop - x.start) for x in sl)]
+    return out
+
+def list_nodes(path):
+    nodes = []
+    for root, dirs, files in os.walk(path):
+        if "zarr.json" in files:
+            m = json.load(open(os.path.join(root, "zarr.json")))
+            if m.get("node_type") == "array":
+                nodes.append(("v3", os.path.relpath(root, path), tuple(m["shape"]), m["data_type"], root))
+        if ".zarray" in files:
+            m = json.load(open(os.path.join(root, ".zarray")))
+            nodes.append(("v2", os.path.relpath(root, path), tuple(m["shape"]), m["dtype"], root))
+    return nodes
+
+def load_zarr_2d(path, target_hw):
+    nodes = list_nodes(path)
+    desc = [(n[0], n[1], n[2], n[3]) for n in nodes]
+    print("arrays in", path, ":", desc)
+    if not nodes:
+        raise RuntimeError("no zarr arrays found under " + path)
+    def hw(sh):
+        sh = [d for d in sh if d > 1]
+        return (sh[-2], sh[-1]) if len(sh) >= 2 else (0, 0)
+    big = [n for n in nodes if hw(n[2])[0] >= 0.9 * target_hw[0]]
+    pick = min(big, key=lambda n: hw(n[2])[0] * hw(n[2])[1]) if big else max(nodes, key=lambda n: hw(n[2])[0] * hw(n[2])[1])
+    x = v3_read(pick[4]) if pick[0] == "v3" else np.asarray(zarr.open(pick[4], mode="r")[...])
+    x = np.squeeze(x)
+    while x.ndim > 2:
+        x = x[0] if x.shape[0] < x.shape[-1] else x[..., 0]
+    return x, pick[0] + ":" + pick[1], desc
+
+base = glob.glob(SG + "/" + seg + "/ink-labels/*/*/")
+base = sorted(base)[-1] if base else None
+print("label folder:", base)
+first = tifffile.imread(R + "/" + seg + "/" + seg + "__ck075k__L06-22.tif").squeeze()
+H0, W0 = first.shape
+del first
+lab, lab_key, lab_desc = load_zarr_2d(base + "inklabels.zarr", (H0, W0))
+info = {"segment": seg, "label_source": base + "inklabels.zarr", "label_array_used": lab_key,
+        "label_arrays_available": lab_desc, "label_shape_used": list(lab.shape),
+        "label_unique_values_sample": [int(v) for v in np.unique(lab[::37, ::37])[:10]]}
+sup = None
+if os.path.exists(base + "supervision.zarr"):
+    sup, sup_key, sup_desc = load_zarr_2d(base + "supervision.zarr", (H0, W0))
+    info["supervision_array_used"] = sup_key
+    info["supervision_arrays_available"] = sup_desc
+    info["supervision_unique_values_sample"] = [int(v) for v in np.unique(sup[::37, ::37])[:10]]
+vote, valid, s1, s2, single = None, None, None, None, None
+for n in names:
+    a = tifffile.imread(R + "/" + seg + "/" + seg + "__" + n + ".tif").squeeze()
+    fl = a.astype(np.float32) / 255
+    b = (a > 127).astype(np.uint8)
+    vote = b if vote is None else vote + b
+    valid = (a > 0) if valid is None else (valid | (a > 0))
+    s1 = fl if s1 is None else s1 + fl
+    s2 = fl * fl if s2 is None else s2 + fl * fl
+    if n == "ck075k__L06-22":
+        single = fl > 0.5
+h, w = vote.shape
+mean9 = s1 / 9
+std = np.sqrt(np.maximum(s2 / 9 - mean9 ** 2, 0))
+del s1, s2
+if lab.shape != (h, w):
+    lab8 = ((lab.astype(np.float32) / max(float(lab.max()), 1)) * 255).astype(np.uint8)
+    lab = np.array(Image.fromarray(lab8).resize((w, h), Image.NEAREST))
+    info["label_resized_to"] = [h, w]
+L = (lab.astype(np.float32) / max(float(lab.max()), 1)) > 0.5
+if sup is not None:
+    if sup.shape != (h, w):
+        sup = np.array(Image.fromarray(((sup > 0) * 255).astype(np.uint8)).resize((w, h), Image.NEAREST))
+    supm = sup > 0
+    info["supervised_pct_of_papyrus"] = round(float(100 * (supm & valid).sum() / valid.sum()), 1)
+    valid = valid & supm
+    info["note"] = "all metrics restricted to supervised (labeled) region"
+f8 = 8
+sm = valid[:h // f8 * f8, :w // f8 * f8].reshape(h // f8, f8, w // f8, f8).all((1, 3))
+sm = ndi.binary_erosion(sm, iterations=16)
+core = np.zeros_like(valid)
+core[:h // f8 * f8, :w // f8 * f8] = np.repeat(np.repeat(sm, f8, 0), f8, 1)
+zones = {"agreed_ink": valid & (vote == 9), "agreed_background": valid & (vote == 0),
+         "deep_conflict": valid & core & (std > 0.2)}
+zones["borderline"] = valid & ~zones["agreed_ink"] & ~zones["agreed_background"] & ~zones["deep_conflict"]
+Lv = L & valid
+info["labeled_ink_pct_of_papyrus"] = round(float(100 * Lv.sum() / valid.sum()), 2)
+info["zones"] = {}
+for k, m in zones.items():
+    info["zones"][k] = {"pct_of_papyrus": round(float(100 * m.sum() / valid.sum()), 3),
+                        "pct_of_zone_that_is_labeled_ink": round(float(100 * (m & L).sum() / max(m.sum(), 1)), 1),
+                        "pct_of_labeled_ink_in_zone": round(float(100 * (m & L).sum() / max(Lv.sum(), 1)), 1)}
+def pr(pred):
+    tp = (pred & Lv).sum()
+    return {"precision_pct": round(float(100 * tp / max((pred & valid).sum(), 1)), 1),
+            "recall_pct": round(float(100 * tp / max(Lv.sum(), 1)), 1)}
+info["vs_labels"] = {"single_run_75k_p>0.5": pr(single & valid), "average_of_9_p>0.5": pr((mean9 > 0.5) & valid),
+                     "unanimous_9_of_9": pr(zones["agreed_ink"])}
+rgb = np.zeros((h, w, 3), np.uint8)
+rgb[zones["agreed_ink"]] = (255, 255, 255)
+rgb[zones["borderline"]] = (90, 60, 20)
+rgb[ndi.binary_dilation(zones["deep_conflict"], iterations=4) & core] = (255, 30, 30)
+edge = L & ~ndi.binary_erosion(L, iterations=3)
+rgb[edge] = (0, 220, 255)
+def save(arr, path, width, title):
+    im = Image.fromarray(arr).resize((width, int(arr.shape[0] * width / arr.shape[1])), Image.LANCZOS)
+    cv = Image.new("RGB", (im.size[0], im.size[1] + 40), (0, 0, 0))
+    cv.paste(im, (0, 40))
+    ImageDraw.Draw(cv).text((10, 14), title, fill=(255, 255, 255))
+    cv.save(path)
+t = "w043: cyan outline = human-traced ink labels; white = all 9 agree ink; brown = borderline; red = deep conflict"
+save(rgb, O + "/labels_overlay_" + seg + ".png", 1800, t)
+y0, x0, y1, x1 = CROP
+y0, x0 = max(0, min(y0, h - 400)), max(0, min(x0, w - 400))
+y1, x1 = min(h, max(y1, y0 + 400)), min(w, max(x1, x0 + 400))
+save(rgb[y0:y1, x0:x1], O + "/labels_overlay_crop_" + seg + ".png", 1800, t)
+json.dump(info, open(O + "/labels_vs_consensus.json", "w"), indent=2)
+print(json.dumps(info, indent=2))
+print("CAVEAT: w043 labels were part of this model's training data; this is a sanity check, not validation.")
+print("DONE")

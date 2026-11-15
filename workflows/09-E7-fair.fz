@@ -1,0 +1,130 @@
+version: v4
+
+volumes:
+  data:
+    use: team5
+    name: prometheus-data
+    egress:
+      - source:
+          uri: file://results/E7-fair/metrics.json
+        destination:
+          uri: fb://group/prometheus/E7_fair_metrics.json
+
+jobs:
+  fair:
+    image:
+      uri: docker://nvcr.io/nvidia/pytorch:25.10-py3
+    mounts:
+      /data: data
+    resource:
+      cpu:
+        cores: 8
+      memory:
+        size: 64GB
+    script: |
+      #!/bin/bash
+      set -uo pipefail
+      source /data/venv/bin/activate
+      cat > /tmp/fair.py <<'PYEOF'
+      import itertools, json, os
+      import numpy as np, tifffile
+      R = os.environ.get("R", "/data/results/E6-bulk")
+      O = os.environ.get("O", "/data/results/E7-fair")
+      os.makedirs(O, exist_ok=True)
+      T = 256
+      CK = ["ck010k", "ck040k", "ck075k"]
+      LY = ["L04-20", "L06-22", "L08-24"]
+      names = [c + "__" + l for c in CK for l in LY]
+      ck_of = [n.split("__")[0] for n in names]
+      PILOT2 = [names.index("ck075k__L06-22"), names.index("ck010k__L06-22")]
+      BASE3 = [names.index(c + "__L06-22") for c in CK]
+      BUDGETS = [3, 4, 5, 6]
+      SEEDS = [0, 1, 2]
+      out = {"experiment": "E7-fair", "reference": "mean of 9 configs > 0.5", "tile_px": T, "segments": {}}
+
+      for seg in ["w024", "w043"]:
+          imgs = [tifffile.imread(R + "/" + seg + "/" + seg + "__" + n + ".tif").squeeze() for n in names]
+          h, w = imgs[0].shape
+          valid = np.zeros((h, w), bool)
+          for a in imgs:
+              valid |= a > 0
+          yy, xx = np.nonzero(valid)
+          tid = (yy // T) * (-(-w // T)) + (xx // T)
+          ntiles = int(tid.max()) + 1
+          S = np.stack([a[valid].astype(np.float32) / 255 for a in imgs])
+          del imgs
+          ref = S.mean(0)
+          refB = ref > 0.5
+          hard = S.std(0) > 0.2
+          cnt = np.bincount(tid, minlength=ntiles)
+          usable = cnt >= 0.1 * T * T
+          nus = int(usable.sum())
+
+          def score(est):
+              wr = (est > 0.5) != refB
+              return {"wrong_pct": float(100 * wr.mean()), "wrong_contested_pct": float(100 * wr[hard].mean())}
+
+          def tile_mean(v):
+              return np.bincount(tid, weights=v, minlength=ntiles) / np.maximum(cnt, 1)
+
+          def pick(rank, k):
+              r = np.where(usable, rank, -np.inf)
+              sel = np.zeros(ntiles, bool)
+              sel[np.argsort(-r)[:k]] = True
+              return sel[tid]
+
+          full9 = ref
+          res = {"valid_pixels": int(valid.sum()), "usable_tiles": nus, "budgets": {}}
+          for B in BUDGETS:
+              row = {}
+              allu, strat = [], []
+              for sub in itertools.combinations(range(9), B):
+                  s = score(S[list(sub)].mean(0))["wrong_pct"]
+                  allu.append(s)
+                  if len({ck_of[i] for i in sub}) == 3:
+                      strat.append(s)
+              row["uniform_all_subsets"] = {"n": len(allu), "mean": float(np.mean(allu)), "median": float(np.median(allu)),
+                                            "best": float(np.min(allu)), "worst": float(np.max(allu))}
+              row["uniform_stratified_all_3_ckpts"] = {"n": len(strat), "mean": float(np.mean(strat)),
+                                                       "best": float(np.min(strat)), "worst": float(np.max(strat))}
+              f2 = (B - 2) / 7.0
+              k2 = int(round(f2 * nus))
+              pil = S[PILOT2].mean(0)
+              m = pick(tile_mean(np.abs(S[PILOT2[0]] - S[PILOT2[1]])), k2)
+              row["adaptive_2pilot_E7"] = dict(score(np.where(m, full9, pil)), area_refined_pct=float(100 * f2))
+              if B >= 3:
+                  f3 = (B - 3) / 6.0
+                  k3 = int(round(f3 * nus))
+                  base = S[BASE3].mean(0)
+                  m3 = pick(tile_mean(S[BASE3].std(0)), k3)
+                  a3 = dict(score(np.where(m3, full9, base)), area_refined_pct=float(100 * f3))
+                  a3["contested_covered_pct"] = float(100 * (m3 & hard).sum() / max(hard.sum(), 1))
+                  row["adaptive_3base_stratified"] = a3
+                  rs = []
+                  for sd in SEEDS:
+                      mr = pick(np.random.default_rng(100 + sd).random(ntiles), k3)
+                      d = score(np.where(mr, full9, base))
+                      d["contested_covered_pct"] = float(100 * (mr & hard).sum() / max(hard.sum(), 1))
+                      rs.append(d)
+                  row["random_tiles_3base"] = {k: float(np.mean([d[k] for d in rs])) for k in rs[0]}
+                  if B == 3:
+                      row["base3_only"] = score(base)
+              res["budgets"][str(B)] = row
+          out["segments"][seg] = res
+          del S
+      json.dump(out, open(O + "/metrics.json", "w"), indent=2)
+      print(json.dumps(out, indent=2))
+      print("\nSUMMARY: wrong calls vs 9-config reference (%), lower is better")
+      print("B | uniform: mean / best / worst (all subsets) | uniform stratified mean | adaptive-2pilot (E7) | ADAPTIVE-3base | random-3base")
+      for seg, r in out["segments"].items():
+          print("==", seg, "==")
+          for B, b in r["budgets"].items():
+              u, s = b["uniform_all_subsets"], b["uniform_stratified_all_3_ckpts"]
+              print("%s | %5.2f / %5.2f / %5.2f | %5.2f | %5.2f | %5.2f (refines %4.1f%%) | %5.2f" % (
+                  B, u["mean"], u["best"], u["worst"], s["mean"], b["adaptive_2pilot_E7"]["wrong_pct"],
+                  b["adaptive_3base_stratified"]["wrong_pct"], b["adaptive_3base_stratified"]["area_refined_pct"],
+                  b["random_tiles_3base"]["wrong_pct"]))
+      print("DONE")
+      PYEOF
+      echo "lines in script: $(wc -l < /tmp/fair.py) (expect 99)"
+      python /tmp/fair.py

@@ -1,0 +1,115 @@
+\documentclass[9pt,letterpaper,twocolumn]{extarticle}
+\usepackage[margin=0.55in,top=0.5in,bottom=0.45in,columnsep=0.22in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern,microtype,booktabs,amsmath,xcolor,titlesec,graphicx,array}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\usepackage[hidelinks]{hyperref}
+\definecolor{navy}{HTML}{17365D}
+\titleformat{\section}{\color{navy}\bfseries\normalsize}{}{0pt}{}
+\titlespacing*{\section}{0pt}{5pt}{2pt}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{1.5pt}
+\setlength{\tabcolsep}{3pt}
+\renewcommand{\arraystretch}{1.05}
+\pagestyle{empty}
+% ---------------------------------------------------------------------------
+% Every number comes from the exported result files:
+%   scaling/scaling_benchmark.json, E5-workers/, E6-bulk/metrics.json,
+%   E7-fair/metrics.json, E7b-live/, E8-pack/metrics.json,
+%   consensus/consensus_summary.json, labels-check/labels_vs_consensus.json,
+%   cross-seed/cross_seed_metrics.json, host-os/host_task{1,2}.txt
+% "about 2.5 h" for default settings is an ESTIMATE (18 runs x 86 s x 5.9).
+% ---------------------------------------------------------------------------
+\begin{document}
+\twocolumn[{
+\begin{center}
+{\LARGE\bfseries\color{navy} Project Prometheus: Compute Where It Matters}\\[3pt]
+{\large Scalable ensemble inference that maps where an ink-detection AI can be trusted on an unopened Herculaneum scroll}\\[4pt]
+{\small Team 5 \quad|\quad CIQ Supercomputing Local AI Hackathon, SC26 Chicago \quad|\quad November 2026 \quad|\quad \texttt{github.com/<team>/prometheus}}
+\end{center}
+\vspace{-5pt}
+\begin{minipage}{\textwidth}
+\small\textbf{Abstract.} A single AI ink map of a carbonized scroll looks equally confident everywhere, and checking it means running the model many ways. We built a reproducible \textbf{CIQ Fuzzball} pipeline that runs the public Vesuvius Challenge ink model (\texttt{scrollprize/ink\_9um}) as many independent GPU jobs across two \textbf{NVIDIA GB10} nodes on shared \textbf{VAST} storage, then maps where runs agree. Tuning and scheduling cut an 18-run ensemble from an estimated 2.5\,h to a measured \textbf{12.5\,min} (1.97$\times$ two-node speedup, 98.5\% efficiency, identical outputs), which let us run and validate ensembles repeatedly. Across 3 checkpoints $\times$ 3 depth windows $\times$ 2 independently trained models on PHerc.~0139, only a small core of each map is stable: retraining alone changes 16--20\% of pixels. Where all 18 runs agree, annotators confirm ink \textbf{94.2\%} of the time, versus 80.2\% for a single run. The result is a triage map telling researchers where to read first and where expert labels are most needed.
+\end{minipage}
+\vspace{5pt}
+}]
+
+\section{1. Problem}
+AI ink maps of Herculaneum papyri depend on choices the reader never sees: checkpoint, CT layers, training run. Testing them needs many full inferences per segment, which is only routine if the infrastructure makes it cheap.
+
+\section{2. System: Fuzzball, GB10 and VAST}
+\textbf{Pipeline.} Fuzzball workflows (v4 Fuzzfiles) stage the model and scans once onto a persistent VAST volume, fan out inference as a \texttt{task-array} (one NGC PyTorch 25.10 job per configuration, one GB10 GPU each, both nodes), then run CPU analysis jobs that read every output from the same volume and egress results to object storage. Tasks skip finished outputs and check that 17 CT layers were read, so failed runs restart safely. Both nodes run CIQ's kernel (\texttt{6.18.43-2.1.el9\_clk}, verified per node).
+
+\textbf{Performance}, same 18-run ensemble:
+\begin{center}
+\vspace{-4pt}\small
+\begin{tabular}{@{}lrl@{}}
+\toprule
+\textbf{Step} & \textbf{18 runs} & \\
+\midrule
+Default settings, 1 GPU & $\sim$2.5\,h & estimated \\
+Data-loader tuning (E5), 1 GPU & 24.6\,min & measured, 5.9$\times$/run \\
+Two nodes via Fuzzball & \textbf{12.5\,min} & measured, \textbf{1.97$\times$} \\
+\bottomrule
+\end{tabular}\vspace{-3pt}
+\end{center}
+With both nodes reading VAST, mean job time rose only 0.5\% (81.4 to 81.8\,s); scheduling overhead was 12--14\,s per phase. Packing two jobs per GPU (E8) doubled throughput (2.0--2.1$\times$), lifted GPU utilization from 23\% to $\sim$60\% and cut energy per run 13--22\%, with identical outputs.
+
+\section{3. Experiments and what each shows}
+\begin{center}
+\vspace{-3pt}\footnotesize
+\begin{tabular}{@{}L{0.24\columnwidth}L{0.555\columnwidth}L{0.145\columnwidth}@{}}
+\toprule
+\textbf{Experiment} & \textbf{Key measured result} & \textbf{Criterion} \\
+\midrule
+E5 loader tuning & 5.9$\times$ faster per run (86\,s) & Tech \\
+Scaling benchmark & 1,478\,s vs 750\,s: 1.97$\times$, 98.5\% efficient, VAST +0.5\%/job & Eco, Tech \\
+E8 GPU packing & 2$\times$ throughput, $-$13--22\% energy per run & Eco \\
+E6 nine-way ensemble & checkpoint flips 32.0/29.8\% of pixels, depth 14.7/12.4\% & Value \\
+Consensus map & unanimous ink 12.3/5.9\% of papyrus; deep conflict $\sim$0.2\% & Value, Innov \\
+Label check & unanimous precision 92.1\% vs 80.2\% for a single run & Value \\
+Cross-seed (\texttt{seed43}) & retraining flips 16--20\%; 18/18 precision 94.2\% & Value, Innov \\
+E7-fair (offline) & refining disputed tiles: 15--28\% fewer errors than best uniform & Innov \\
+E7b live replay & offline result reproduced on GPUs & Tech \\
+\bottomrule
+\end{tabular}\vspace{-3pt}
+\end{center}
+{\footnotesize Pairs are w024 / w043. Tech = technical execution; Eco = NVIDIA / CIQ / VAST ecosystem; Value = value and impact; Innov = innovation.}
+
+\textbf{Targeted refinement (E7-fair).} From the nine outputs, a 3-run base (one per checkpoint) is extended on the most disputed 256\,px tiles; versus \emph{every} uniform subset at equal budget, error against the nine-run reference falls from 2.70 to 2.27\% (4 runs), 2.35 to 1.70\% (5) and 1.50 to 1.15\% (6) on w024. Random tiles also beat uniform, so part of the gain is per-tile mixing, part targeting. Our first two-pilot version did \emph{not} beat a fair baseline; a teammate's review caught it.
+
+\section{4. Results}
+\begin{center}
+\vspace{-3pt}
+\includegraphics[width=0.8\columnwidth]{images/hero_consensus_crop_w024.png}\\[-1pt]
+{\footnotesize\textbf{Fig.~1.} Held-out segment w024. White: ink in all 9 runs. Brown: borderline. Red: deep conflict.}
+\vspace{-4pt}
+\end{center}
+
+\textbf{Consensus is a small core.} Per pixel: agreed ink if every run has $p>0.5$, agreed background if none does, deep conflict if the spread across runs exceeds 0.2 (128\,px edge band excluded), borderline otherwise. A single run marks 2.5--3.7$\times$ more ink than all nine agree on (12.3\% / 5.9\% of the papyrus). Adding an independently trained model shrinks the core to 7.9\% / 3.7\% / 2.2\% (w024 / w043 / w035); only 62--64\% of one model's unanimous ink is unanimous in the other, consistently across segments.
+
+\textbf{What drives disagreement.} Comparing pairs of runs, a different training seed changes 17.6--19.5\% of pixels (16.0--19.6\% at the final checkpoints), about as much as a different checkpoint (19.7--21.4\%) and twice a different depth (9.3--9.9\%).
+
+\textbf{Agreement tracks annotations.} Within the labeled 1\% of w043:
+\begin{center}
+\vspace{-4pt}\small
+\begin{tabular}{@{}lrr@{}}
+\toprule
+\textbf{Prediction} & \textbf{Precision} & \textbf{Recall} \\
+\midrule
+Base rate (labeled ink share) & 44.3\% & -- \\
+Single run (75k, $p>0.5$) & 80.2\% & 64.6\% \\
+Unanimous, one model (9/9) & 92.1\% & 43.0\% \\
+Unanimous, two models (18/18) & \textbf{94.2\%} & 34.8\% \\
+\bottomrule
+\end{tabular}\vspace{-3pt}
+\end{center}
+Borderline pixels are ink 44.4\% of the time and hold 41.1\% of labeled ink. Labeled ink where every run says background falls from 16\% (one model) to 8.6\% (two). No red pixels fall in the labeled region, so red areas are untested. (w035's labels were very likely in training: single runs score 98\%.)
+
+\section{5. Impact, limitations, next steps}
+\textbf{Use.} \textbf{White} strokes are where to start reading (94\% annotator-confirmed), though they hold only about a third of labeled ink. \textbf{Red} areas, under 0.2\% of the papyrus, form a short ranked list we propose for expert review and new training labels. Black is not proof of blank papyrus.
+
+\textbf{Limits.} Agreement is not correctness: both models share architecture and data. The label check is small and trained-on. E7 measures how well a cheaper ensemble reproduces the full one, not accuracy. Near-linear scaling is expected for independent jobs; we did not test more nodes, compiled or low-precision inference, and GPU use was $\sim$30\% per unpacked job.
+
+\textbf{Next.} Held-out labeled segments; label red areas, retrain, measure; whole-scroll consensus on more nodes with packed, compiled inference.
+\end{document}

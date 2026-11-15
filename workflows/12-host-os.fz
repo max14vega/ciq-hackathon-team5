@@ -1,0 +1,36 @@
+version: v4
+
+volumes:
+  data:
+    use: team5
+    name: prometheus-data
+
+jobs:
+  hostinfo:
+    image:
+      uri: docker://nvcr.io/nvidia/pytorch:25.10-py3
+    mounts:
+      /data: data
+    resource:
+      cpu:
+        cores: 2
+      memory:
+        size: 4GB
+      devices:
+        nvidia.com/gpu: 1
+    task-array:
+      start: 1
+      end: 2
+      concurrency: 2
+    script: |
+      #!/bin/bash
+      OUT=/data/results/host-os
+      mkdir -p $OUT
+      {
+        echo "== task $FB_TASK_ID =="
+        echo "kernel: $(uname -r)  arch: $(uname -m)"
+        echo "proc/version: $(cat /proc/version)"
+        nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv
+        nvidia-smi | head -5
+        echo "cpus visible: $(nproc)"
+      } | tee $OUT/host_task$FB_TASK_ID.txt

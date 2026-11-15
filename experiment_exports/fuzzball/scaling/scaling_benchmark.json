@@ -1,0 +1,81 @@
+{
+  "experiment": "scaling benchmark: same 18 E6 jobs, 1 GPU at a time vs 2 nodes",
+  "phases": {
+    "one": {
+      "gpus_used_at_once": 1,
+      "jobs_completed": 18,
+      "jobs_total": 18,
+      "wall_clock_s": 1478,
+      "sum_job_s": 1466,
+      "mean_job_s": 81.4,
+      "min_job_s": 75,
+      "max_job_s": 86,
+      "throughput_jobs_per_min": 0.731,
+      "scheduling_overhead_s": 12.0,
+      "gpu_util_mean_pct": 29.2,
+      "gpu_power_mean_w": 21.6,
+      "per_job_s": {
+        "w024__ck010k__L04-20": 75,
+        "w024__ck010k__L06-22": 77,
+        "w024__ck010k__L08-24": 78,
+        "w024__ck040k__L04-20": 78,
+        "w024__ck040k__L06-22": 78,
+        "w024__ck040k__L08-24": 80,
+        "w024__ck075k__L04-20": 82,
+        "w024__ck075k__L06-22": 79,
+        "w024__ck075k__L08-24": 81,
+        "w043__ck010k__L04-20": 81,
+        "w043__ck010k__L06-22": 83,
+        "w043__ck010k__L08-24": 85,
+        "w043__ck040k__L04-20": 86,
+        "w043__ck040k__L06-22": 82,
+        "w043__ck040k__L08-24": 86,
+        "w043__ck075k__L04-20": 84,
+        "w043__ck075k__L06-22": 85,
+        "w043__ck075k__L08-24": 86
+      }
+    },
+    "two": {
+      "gpus_used_at_once": 2,
+      "jobs_completed": 18,
+      "jobs_total": 18,
+      "wall_clock_s": 750,
+      "sum_job_s": 1472,
+      "mean_job_s": 81.8,
+      "min_job_s": 77,
+      "max_job_s": 85,
+      "throughput_jobs_per_min": 1.44,
+      "scheduling_overhead_s": 14.0,
+      "gpu_util_mean_pct": 29.9,
+      "gpu_power_mean_w": 22.7,
+      "per_job_s": {
+        "w024__ck010k__L04-20": 80,
+        "w024__ck010k__L06-22": 81,
+        "w024__ck010k__L08-24": 77,
+        "w024__ck040k__L04-20": 84,
+        "w024__ck040k__L06-22": 78,
+        "w024__ck040k__L08-24": 77,
+        "w024__ck075k__L04-20": 81,
+        "w024__ck075k__L06-22": 80,
+        "w024__ck075k__L08-24": 77,
+        "w043__ck010k__L04-20": 83,
+        "w043__ck010k__L06-22": 83,
+        "w043__ck010k__L08-24": 85,
+        "w043__ck040k__L04-20": 85,
+        "w043__ck040k__L06-22": 85,
+        "w043__ck040k__L08-24": 85,
+        "w043__ck075k__L04-20": 83,
+        "w043__ck075k__L06-22": 84,
+        "w043__ck075k__L08-24": 84
+      }
+    }
+  },
+  "measured_speedup": 1.971,
+  "throughput_improvement": 1.97,
+  "scaling_efficiency_pct": 98.5,
+  "mean_job_slowdown_on_two_nodes_pct": 0.5,
+  "outputs_match_E6_corr": {
+    "w024__ck010k__L04-20": 0.9999999999999999,
+    "w024__ck010k__L06-22": 1.0
+  }
+}

@@ -1,0 +1,134 @@
+import csv, json, os
+import numpy as np, tifffile
+from PIL import Image, ImageDraw
+Image.MAX_IMAGE_PIXELS = None
+R = os.environ.get("R", "/data/results/E6-bulk")
+O = os.environ.get("O", "/data/results/consensus")
+os.makedirs(O, exist_ok=True)
+T = 512
+CK = ["ck010k", "ck040k", "ck075k"]
+LY = ["L04-20", "L06-22", "L08-24"]
+CROPS = {"w043": [3300, 1200, 5000, 5400], "w024": [2800, 600, 4500, 4800]}
+names = [c + "__" + l for c in CK for l in LY]
+summary = {"rule": "votes = number of the 9 configurations with p > 0.5; spread = std of the 9 scores",
+           "zones": {"agreed_ink": "9/9 votes", "agreed_background": "0/9 votes",
+                     "deep_conflict": "std of the 9 scores > 0.2 (same definition as the E6 headline)",
+                     "borderline": "votes split but scores close together (std <= 0.2)"},
+           "tile_px": T, "segments": {}}
+for seg in ["w024", "w043"]:
+    vote = None
+    valid = None
+    s1 = None
+    s2 = None
+    for n in names:
+        a = tifffile.imread(R + "/" + seg + "/" + seg + "__" + n + ".tif").squeeze()
+        b = (a > 127).astype(np.uint8)
+        f = a.astype(np.float32) / 255
+        vote = b if vote is None else vote + b
+        valid = (a > 0) if valid is None else (valid | (a > 0))
+        s1 = f if s1 is None else s1 + f
+        s2 = f * f if s2 is None else s2 + f * f
+    h, w = vote.shape
+    std = np.sqrt(np.maximum(s2 / 9 - (s1 / 9) ** 2, 0))
+    del s1, s2
+    from scipy import ndimage as ndi
+    f8 = 8
+    hh, ww = h // f8, w // f8
+    sm = valid[:hh * f8, :ww * f8].reshape(hh, f8, ww, f8).all((1, 3))
+    sm = ndi.binary_erosion(sm, iterations=16)
+    core = np.zeros_like(valid)
+    core[:hh * f8, :ww * f8] = np.repeat(np.repeat(sm, f8, 0), f8, 1)
+    agreed_ink = valid & (vote == 9)
+    agreed_bg = valid & (vote == 0)
+    strong_all = valid & (std > 0.2)
+    strong = strong_all & core
+    mild = valid & ~agreed_ink & ~agreed_bg & ~strong
+    nv = valid.sum()
+    st = {"papyrus_pixels": int(nv)}
+    for k, m in [("agreed_ink", agreed_ink), ("agreed_background", agreed_bg), ("borderline", mild), ("deep_conflict", strong)]:
+        st[k + "_pct"] = round(float(100 * m.sum() / nv), 3)
+    st["deep_conflict_incl_edges_pct"] = round(float(100 * strong_all.sum() / nv), 3)
+    st["deep_conflict_share_in_edge_band_pct"] = round(float(100 * (strong_all & ~core).sum() / max(strong_all.sum(), 1)), 1)
+    st["edge_band"] = "128 px band along the papyrus boundary excluded from deep conflict and review ranking"
+    st["deep_conflict_inside_vote_split_pct"] = round(float(100 * (strong & (vote > 0) & (vote < 9)).sum() / max(strong.sum(), 1)), 1)
+    rgb = np.zeros((h, w, 3), np.uint8)
+    rgb[agreed_ink] = (255, 255, 255)
+    rgb[mild] = (90, 60, 20)
+    rgb[ndi.binary_dilation(strong, iterations=4) & core] = (255, 30, 30)
+    def save(arr, path, width, legend=True):
+        im = Image.fromarray(arr).resize((width, int(arr.shape[0] * width / arr.shape[1])), Image.LANCZOS)
+        if legend:
+            cv = Image.new("RGB", (im.size[0], im.size[1] + 40), (0, 0, 0))
+            cv.paste(im, (0, 40))
+            d = ImageDraw.Draw(cv)
+            x = 10
+            for col, txt in [((255, 255, 255), "all 9 agree: ink"), ((255, 30, 30), "deep conflict (scores far apart; enlarged; edges excluded): expert review"),
+                             ((90, 60, 20), "borderline (scores near threshold)"), ((60, 60, 60), "black: all 9 agree no ink")]:
+                d.rectangle([x, 14, x + 14, 28], fill=col)
+                d.text((x + 20, 15), txt, fill=(255, 255, 255))
+                x += 30 + 7 * len(txt)
+            im = cv
+        im.save(path)
+    save(rgb, O + "/consensus_" + seg + ".png", 1800)
+    y0, x0, y1, x1 = CROPS[seg]
+    y0, x0 = max(0, min(y0, h - 400)), max(0, min(x0, w - 400))
+    y1, x1 = min(h, max(y1, y0 + 400)), min(w, max(x1, x0 + 400))
+    save(rgb[y0:y1, x0:x1], O + "/consensus_crop_" + seg + ".png", 1800)
+    B = T // 2
+    H, W = -(-h // B) * B, -(-w // B) * B
+    def blocks(m):
+        return np.pad(m, ((0, H - h), (0, W - w))).reshape(H // B, B, W // B, B).sum((1, 3)).astype(np.float64)
+    sb, vb, ib = blocks(strong), blocks(valid & core), blocks(agreed_ink & core)
+    win = lambda a: a[:-1, :-1] + a[1:, :-1] + a[:-1, 1:] + a[1:, 1:]
+    sp, vp, ip = win(sb), win(vb), win(ib)
+    frac = np.where(vp >= 0.5 * T * T, sp / np.maximum(vp, 1), np.nan)
+    tiles = []
+    for (r, c), f in np.ndenumerate(frac):
+        if not np.isnan(f):
+            tiles.append({"tile_row": r, "tile_col": c, "x0": c * B, "y0": r * B,
+                          "deep_conflict_pct": round(100 * float(f), 2),
+                          "agreed_ink_pct": round(100 * float(ip[r, c] / vp[r, c]), 2)})
+    tiles.sort(key=lambda t: -t["deep_conflict_pct"])
+    top = []
+    for t in tiles:
+        if all(abs(t["x0"] - u["x0"]) >= T or abs(t["y0"] - u["y0"]) >= T for u in top):
+            top.append(t)
+        if len(top) == 10:
+            break
+    with open(O + "/review_list_" + seg + ".csv", "w", newline="") as fh:
+        wr = csv.DictWriter(fh, ["rank", "tile_row", "tile_col", "x0", "y0", "deep_conflict_pct", "agreed_ink_pct"])
+        wr.writeheader()
+        for i, t in enumerate(tiles, 1):
+            wr.writerow(dict(rank=i, **t))
+    small = rgb[::4, ::4].astype(np.float32) * 0.8
+    sc = 0.25
+    heat = np.nan_to_num(frac, nan=0.0)
+    mx = max(float(np.nanmax(frac)) if tiles else 0.0, 1e-6)
+    hm = np.zeros(small.shape, np.float32)
+    hb = np.zeros((heat.shape[0] + 1, heat.shape[1] + 1))
+    hb[:-1, :-1] = np.maximum(hb[:-1, :-1], heat)
+    hb[1:, 1:] = np.maximum(hb[1:, 1:], heat)
+    big = np.repeat(np.repeat(hb / mx, B // 4, 0), B // 4, 1)[:small.shape[0], :small.shape[1]]
+    big = np.pad(big, ((0, max(0, small.shape[0] - big.shape[0])), (0, max(0, small.shape[1] - big.shape[1]))))
+    hm[..., 0] = big * 255
+    hm[..., 1] = big * 60
+    a_ = (big[..., None] ** 1.5) * 0.6
+    tile_img = np.clip(small * (1 - a_) + hm * a_ / np.maximum(big[..., None], 1e-6), 0, 255).astype(np.uint8)
+    im = Image.fromarray(tile_img).resize((1800, int(tile_img.shape[0] * 1800 / tile_img.shape[1])), Image.LANCZOS)
+    k = 1800 / w
+    d = ImageDraw.Draw(im)
+    for i, t in enumerate(top, 1):
+        d.rectangle([t["x0"] * k, t["y0"] * k, (t["x0"] + T) * k, (t["y0"] + T) * k], outline=(255, 220, 0), width=3)
+        d.text((t["x0"] * k + 4, t["y0"] * k + 3), "#%d" % i, fill=(255, 230, 0))
+    cv = Image.new("RGB", (im.size[0], im.size[1] + 40), (0, 0, 0))
+    cv.paste(im, (0, 40))
+    ImageDraw.Draw(cv).text((10, 14), "Review heat: redder = more deep conflict (overlapping 4.8 mm windows). Yellow boxes = top 10 review areas", fill=(255, 255, 255))
+    cv.save(O + "/review_heat_" + seg + ".png")
+    st["top10_review_tiles"] = top
+    st["window"] = "512 px windows every 256 px (overlapping), top 10 chosen without overlap"
+    st["tiles"] = len(tiles)
+    summary["segments"][seg] = st
+json.dump(summary, open(O + "/consensus_summary.json", "w"), indent=2)
+print(json.dumps({s: {k: v for k, v in d.items() if k != "top10_review_tiles"} for s, d in summary["segments"].items()}, indent=2))
+print("wrote", sorted(os.listdir(O)))
+print("DONE")

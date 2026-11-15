@@ -1,0 +1,106 @@
+{
+  "experiment": "cross-seed consensus: seed42 x 9 configs + seed43 x 9 configs (independent training runs)",
+  "segments": {
+    "w024": {
+      "papyrus_pixels": 40869376,
+      "unanimous_ink_seed42_pct": 12.34,
+      "unanimous_ink_seed43_pct": 11.91,
+      "unanimous_ink_both_18_of_18_pct": 7.92,
+      "seed42_unanimous_also_unanimous_in_seed43_pct": 64.1,
+      "ink_any_single_run_avg_pct": 31.16,
+      "deep_conflict_interior_18_pct": 0.032,
+      "pairwise_disagreement_pct": {
+        "different_seed_same_ckpt_and_depth": 19.51,
+        "different_checkpoint_same_seed": 21.39,
+        "different_depth_same_seed": 9.86,
+        "different_seed_final_ckpt_default_depth": 19.56
+      }
+    },
+    "w043": {
+      "papyrus_pixels": 45957632,
+      "unanimous_ink_seed42_pct": 5.89,
+      "unanimous_ink_seed43_pct": 6.32,
+      "unanimous_ink_both_18_of_18_pct": 3.66,
+      "seed42_unanimous_also_unanimous_in_seed43_pct": 62.1,
+      "ink_any_single_run_avg_pct": 21.91,
+      "deep_conflict_interior_18_pct": 0.057,
+      "pairwise_disagreement_pct": {
+        "different_seed_same_ckpt_and_depth": 17.59,
+        "different_checkpoint_same_seed": 19.69,
+        "different_depth_same_seed": 9.33,
+        "different_seed_final_ckpt_default_depth": 16.01
+      },
+      "vs_labels": {
+        "supervised_pct_of_papyrus": 0.99,
+        "single_run_seed42_75k": {
+          "precision_pct": 80.2,
+          "recall_pct": 64.6
+        },
+        "single_run_seed43_75k": {
+          "precision_pct": 75.6,
+          "recall_pct": 64.3
+        },
+        "average_of_18": {
+          "precision_pct": 80.5,
+          "recall_pct": 65.6
+        },
+        "unanimous_seed42_9of9": {
+          "precision_pct": 92.1,
+          "recall_pct": 43.0
+        },
+        "unanimous_seed43_9of9": {
+          "precision_pct": 86.3,
+          "recall_pct": 41.8
+        },
+        "unanimous_both_18of18": {
+          "precision_pct": 94.2,
+          "recall_pct": 34.8
+        },
+        "agreed_background_18of18_contains_labeled_ink_pct": 8.6
+      }
+    },
+    "w035": {
+      "papyrus_pixels": 27169536,
+      "unanimous_ink_seed42_pct": 3.46,
+      "unanimous_ink_seed43_pct": 3.44,
+      "unanimous_ink_both_18_of_18_pct": 2.22,
+      "seed42_unanimous_also_unanimous_in_seed43_pct": 64.3,
+      "ink_any_single_run_avg_pct": 14.4,
+      "deep_conflict_interior_18_pct": 0.104,
+      "pairwise_disagreement_pct": {
+        "different_seed_same_ckpt_and_depth": 12.18,
+        "different_checkpoint_same_seed": 14.51,
+        "different_depth_same_seed": 8.09,
+        "different_seed_final_ckpt_default_depth": 9.45
+      },
+      "vs_labels": {
+        "supervised_pct_of_papyrus": 3.94,
+        "single_run_seed42_75k": {
+          "precision_pct": 98.2,
+          "recall_pct": 97.5
+        },
+        "single_run_seed43_75k": {
+          "precision_pct": 97.3,
+          "recall_pct": 97.3
+        },
+        "average_of_18": {
+          "precision_pct": 96.8,
+          "recall_pct": 96.9
+        },
+        "unanimous_seed42_9of9": {
+          "precision_pct": 99.4,
+          "recall_pct": 72.9
+        },
+        "unanimous_seed43_9of9": {
+          "precision_pct": 99.3,
+          "recall_pct": 59.6
+        },
+        "unanimous_both_18of18": {
+          "precision_pct": 99.7,
+          "recall_pct": 56.5
+        },
+        "agreed_background_18of18_contains_labeled_ink_pct": 0.3
+      }
+    }
+  }
+}

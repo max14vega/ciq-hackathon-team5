@@ -1,0 +1,82 @@
+{
+  "experiment": "E7b-live",
+  "mask": {
+    "segment": "w024",
+    "budget_full_passes": 4,
+    "tile_px": 256,
+    "tiles_selected": 186,
+    "usable_tiles": 650,
+    "mask_pct_of_image": 25.86034636823965,
+    "mask_pct_of_valid": 29.731405735189107
+  },
+  "cost_measured": {
+    "masked_runs_gpu_s": 423,
+    "same_7_runs_full_gpu_s": 553,
+    "gpu_time_saved_on_7_runs_pct": 23.5,
+    "per_run_masked_s": {
+      "ck010k__L04-20": 61,
+      "ck010k__L08-24": 61,
+      "ck040k__L04-20": 60,
+      "ck040k__L06-22": 59,
+      "ck040k__L08-24": 60,
+      "ck075k__L04-20": 59,
+      "ck075k__L08-24": 63
+    },
+    "per_run_full_s": {
+      "ck010k__L04-20": 80,
+      "ck010k__L08-24": 76,
+      "ck040k__L04-20": 81,
+      "ck040k__L06-22": 78,
+      "ck040k__L08-24": 77,
+      "ck075k__L04-20": 80,
+      "ck075k__L08-24": 81
+    },
+    "adaptive_total_gpu_s": 580,
+    "uniform_4_pass_gpu_s": 315.6,
+    "full_9_config_gpu_s": 710,
+    "adaptive_vs_full9_saved_pct": 18.3,
+    "adaptive_vs_uniform4_ratio": 1.838,
+    "masked_phase_wall_clock_s_2_nodes": 245
+  },
+  "quality_vs_full_9": {
+    "call_err_pct": 4.379000061072623,
+    "call_err_on_contested_pct": 29.6120646748482
+  },
+  "masked_output_check": {
+    "ck010k__L04-20": {
+      "corr_inside_mask": 0.9999837386675288,
+      "max_abs_diff_inside_0_255": 71.0,
+      "pct_nonzero_outside_mask": 0.0
+    },
+    "ck010k__L08-24": {
+      "corr_inside_mask": 0.9999798699141687,
+      "max_abs_diff_inside_0_255": 74.0,
+      "pct_nonzero_outside_mask": 0.0
+    },
+    "ck040k__L04-20": {
+      "corr_inside_mask": 0.9999583244095612,
+      "max_abs_diff_inside_0_255": 49.999996185302734,
+      "pct_nonzero_outside_mask": 0.0
+    },
+    "ck040k__L06-22": {
+      "corr_inside_mask": 0.9999684751221266,
+      "max_abs_diff_inside_0_255": 46.999996185302734,
+      "pct_nonzero_outside_mask": 0.0
+    },
+    "ck040k__L08-24": {
+      "corr_inside_mask": 0.9999624936559368,
+      "max_abs_diff_inside_0_255": 48.999996185302734,
+      "pct_nonzero_outside_mask": 0.0
+    },
+    "ck075k__L04-20": {
+      "corr_inside_mask": 0.9999317597943419,
+      "max_abs_diff_inside_0_255": 84.0,
+      "pct_nonzero_outside_mask": 0.0
+    },
+    "ck075k__L08-24": {
+      "corr_inside_mask": 0.999944539533781,
+      "max_abs_diff_inside_0_255": 70.0,
+      "pct_nonzero_outside_mask": 0.0
+    }
+  }
+}

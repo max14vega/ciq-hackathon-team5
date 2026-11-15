@@ -1,0 +1,202 @@
+{
+  "rule": "votes = number of the 9 configurations with p > 0.5; spread = std of the 9 scores",
+  "zones": {
+    "agreed_ink": "9/9 votes",
+    "agreed_background": "0/9 votes",
+    "deep_conflict": "std of the 9 scores > 0.2 (same definition as the E6 headline)",
+    "borderline": "votes split but scores close together (std <= 0.2)"
+  },
+  "tile_px": 512,
+  "segments": {
+    "w024": {
+      "papyrus_pixels": 40869376,
+      "agreed_ink_pct": 12.343,
+      "agreed_background_pct": 41.969,
+      "borderline_pct": 45.51,
+      "deep_conflict_pct": 0.178,
+      "deep_conflict_incl_edges_pct": 0.344,
+      "deep_conflict_share_in_edge_band_pct": 48.3,
+      "edge_band": "128 px band along the papyrus boundary excluded from deep conflict and review ranking",
+      "deep_conflict_inside_vote_split_pct": 100.0,
+      "top10_review_tiles": [
+        {
+          "tile_row": 25,
+          "tile_col": 21,
+          "x0": 5376,
+          "y0": 6400,
+          "deep_conflict_pct": 2.43,
+          "agreed_ink_pct": 0.88
+        },
+        {
+          "tile_row": 0,
+          "tile_col": 0,
+          "x0": 0,
+          "y0": 0,
+          "deep_conflict_pct": 2.06,
+          "agreed_ink_pct": 1.74
+        },
+        {
+          "tile_row": 15,
+          "tile_col": 1,
+          "x0": 256,
+          "y0": 3840,
+          "deep_conflict_pct": 1.65,
+          "agreed_ink_pct": 4.35
+        },
+        {
+          "tile_row": 10,
+          "tile_col": 14,
+          "x0": 3584,
+          "y0": 2560,
+          "deep_conflict_pct": 1.16,
+          "agreed_ink_pct": 21.78
+        },
+        {
+          "tile_row": 2,
+          "tile_col": 16,
+          "x0": 4096,
+          "y0": 512,
+          "deep_conflict_pct": 1.08,
+          "agreed_ink_pct": 6.36
+        },
+        {
+          "tile_row": 15,
+          "tile_col": 18,
+          "x0": 4608,
+          "y0": 3840,
+          "deep_conflict_pct": 0.83,
+          "agreed_ink_pct": 9.09
+        },
+        {
+          "tile_row": 15,
+          "tile_col": 5,
+          "x0": 1280,
+          "y0": 3840,
+          "deep_conflict_pct": 0.8,
+          "agreed_ink_pct": 2.26
+        },
+        {
+          "tile_row": 5,
+          "tile_col": 13,
+          "x0": 3328,
+          "y0": 1280,
+          "deep_conflict_pct": 0.78,
+          "agreed_ink_pct": 21.14
+        },
+        {
+          "tile_row": 14,
+          "tile_col": 15,
+          "x0": 3840,
+          "y0": 3584,
+          "deep_conflict_pct": 0.75,
+          "agreed_ink_pct": 19.04
+        },
+        {
+          "tile_row": 26,
+          "tile_col": 9,
+          "x0": 2304,
+          "y0": 6656,
+          "deep_conflict_pct": 0.75,
+          "agreed_ink_pct": 5.54
+        }
+      ],
+      "window": "512 px windows every 256 px (overlapping), top 10 chosen without overlap",
+      "tiles": 579
+    },
+    "w043": {
+      "papyrus_pixels": 45957632,
+      "agreed_ink_pct": 5.886,
+      "agreed_background_pct": 51.14,
+      "borderline_pct": 42.786,
+      "deep_conflict_pct": 0.188,
+      "deep_conflict_incl_edges_pct": 0.329,
+      "deep_conflict_share_in_edge_band_pct": 42.9,
+      "edge_band": "128 px band along the papyrus boundary excluded from deep conflict and review ranking",
+      "deep_conflict_inside_vote_split_pct": 100.0,
+      "top10_review_tiles": [
+        {
+          "tile_row": 19,
+          "tile_col": 3,
+          "x0": 768,
+          "y0": 4864,
+          "deep_conflict_pct": 1.66,
+          "agreed_ink_pct": 5.37
+        },
+        {
+          "tile_row": 5,
+          "tile_col": 0,
+          "x0": 0,
+          "y0": 1280,
+          "deep_conflict_pct": 1.43,
+          "agreed_ink_pct": 1.97
+        },
+        {
+          "tile_row": 14,
+          "tile_col": 20,
+          "x0": 5120,
+          "y0": 3584,
+          "deep_conflict_pct": 1.4,
+          "agreed_ink_pct": 23.4
+        },
+        {
+          "tile_row": 21,
+          "tile_col": 16,
+          "x0": 4096,
+          "y0": 5376,
+          "deep_conflict_pct": 1.3,
+          "agreed_ink_pct": 4.53
+        },
+        {
+          "tile_row": 2,
+          "tile_col": 6,
+          "x0": 1536,
+          "y0": 512,
+          "deep_conflict_pct": 1.11,
+          "agreed_ink_pct": 2.78
+        },
+        {
+          "tile_row": 15,
+          "tile_col": 0,
+          "x0": 0,
+          "y0": 3840,
+          "deep_conflict_pct": 1.04,
+          "agreed_ink_pct": 1.12
+        },
+        {
+          "tile_row": 19,
+          "tile_col": 15,
+          "x0": 3840,
+          "y0": 4864,
+          "deep_conflict_pct": 1.02,
+          "agreed_ink_pct": 10.17
+        },
+        {
+          "tile_row": 21,
+          "tile_col": 20,
+          "x0": 5120,
+          "y0": 5376,
+          "deep_conflict_pct": 1.01,
+          "agreed_ink_pct": 1.58
+        },
+        {
+          "tile_row": 9,
+          "tile_col": 0,
+          "x0": 0,
+          "y0": 2304,
+          "deep_conflict_pct": 1.0,
+          "agreed_ink_pct": 12.64
+        },
+        {
+          "tile_row": 20,
+          "tile_col": 30,
+          "x0": 7680,
+          "y0": 5120,
+          "deep_conflict_pct": 0.98,
+          "agreed_ink_pct": 1.15
+        }
+      ],
+      "window": "512 px windows every 256 px (overlapping), top 10 chosen without overlap",
+      "tiles": 651
+    }
+  }
+}

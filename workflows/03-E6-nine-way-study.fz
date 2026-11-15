@@ -1,0 +1,251 @@
+version: v4
+
+volumes:
+  data:
+    use: team5
+    name: prometheus-data
+
+jobs:
+  infer:
+    image:
+      uri: docker://nvcr.io/nvidia/pytorch:25.10-py3
+    mounts:
+      /data: data
+    resource:
+      cpu:
+        cores: 12
+      memory:
+        size: 48GB
+      devices:
+        nvidia.com/gpu: 1
+    task-array:
+      start: 1
+      end: 18
+      concurrency: 2
+    script: |
+      #!/bin/bash
+      set -uo pipefail
+      EXP=E6-bulk
+      SEGS=(w024 w043)
+      STEPS=(010000 040000 075000)
+      CKT=(ck010k ck040k ck075k)
+      STARTS=(4 6 8)
+      i=$((FB_TASK_ID-1))
+      SEG=${SEGS[$((i/9))]}
+      C=$(((i%9)/3))
+      LS=${STARTS[$((i%3))]}
+      LE=$((LS+17))
+      TAG=$(printf "L%02d-%02d" $LS $((LS+16)))
+      NAME=${SEG}__${CKT[$C]}__${TAG}
+      CKPT=/data/models/ink_9um/hybrid_3d2d-seed42/step-${STEPS[$C]}.pth
+      OUT=/data/results/$EXP/$SEG
+      mkdir -p $OUT
+      NODE=$(hostname)
+      if [ -f $OUT/$NAME.tif ] && grep -q "INFO Wrote" $OUT/log_$NAME.txt 2>/dev/null; then
+        echo "already done: $NAME (kept from E6-bulk)"; exit 0
+      fi
+      echo "task=$FB_TASK_ID name=$NAME node=$NODE layer-start=$LS layer-end=$LE"
+      source /data/venv/bin/activate
+      cd /data/villa/ink-detection
+      nvidia-smi --query-gpu=timestamp,utilization.gpu,power.draw \
+        --format=csv,noheader,nounits -l 1 > $OUT/gpu_$NAME.csv 2>/dev/null &
+      SMI=$!
+      START=$(date +%s)
+      python -m koine_machines.inference.infer /data/segments/$SEG/surface.zarr "$CKPT" \
+        $OUT/$NAME.tif --no-compile --num-workers 8 --batch-size 128 \
+        --layer-start $LS --layer-end $LE > $OUT/log_$NAME.txt 2>&1
+      RC=$?
+      END=$(date +%s)
+      kill $SMI 2>/dev/null
+      LINE=$(grep -m1 "Selected source layer" $OUT/log_$NAME.txt)
+      echo "$LINE"
+      NL=$(echo "$LINE" | grep -o "indices=\[[^]]*\]" | tr ',' '\n' | wc -l)
+      printf '{"experiment":"%s","task":%s,"name":"%s","segment":"%s","ckpt":"%s","layers":"%s","n_layers":%s,"node":"%s","start":%d,"end":%d,"wall_clock_s":%d,"rc":%d}\n' \
+        $EXP $FB_TASK_ID $NAME $SEG ${CKT[$C]} $TAG $NL $NODE $START $END $((END-START)) $RC \
+        | tee $OUT/timing_$NAME.json
+      if [ $RC -ne 0 ] || [ ! -f $OUT/$NAME.tif ] || [ "$NL" -ne 17 ]; then
+        echo "FAILED (rc=$RC, layers=$NL)"; tail -30 $OUT/log_$NAME.txt; exit 1
+      fi
+
+  analyze:
+    depends-on:
+      - name: infer
+        status: FINISHED
+    image:
+      uri: docker://nvcr.io/nvidia/pytorch:25.10-py3
+    mounts:
+      /data: data
+    resource:
+      cpu:
+        cores: 8
+      memory:
+        size: 64GB
+    script: |
+      #!/bin/bash
+      set -uo pipefail
+      source /data/venv/bin/activate
+      cat > /tmp/a.py <<'PYEOF'
+      import glob, json, itertools, os
+      import numpy as np, tifffile
+      from PIL import Image
+      R = os.environ.get("R", "/data/results/E6-bulk")
+      E2 = os.environ.get("E2", "/data/results/sweep/w024/par2")
+      SEGS = ["w024", "w043"]
+      CK = ["ck010k", "ck040k", "ck075k"]
+      STEP = {"ck010k": "010000", "ck040k": "040000", "ck075k": "075000"}
+      LY = ["L04-20", "L06-22", "L08-24"]
+
+      def stats(S, names, valid, thr=0.5, pairs=True):
+          B = S > thr
+          vote = B.mean(0)
+          dis = (vote > 0) & (vote < 1)
+          std = S.std(0)
+          m = {"configs": names, "threshold": thr}
+          m["pct_pixels_disagree"] = float(100 * dis[valid].mean())
+          m["mean_score_std"] = float(std[valid].mean())
+          hi = (std[valid] > 0.2).mean()
+          m["pct_pixels_high_uncertainty_std_gt_0.2"] = float(100 * hi)
+          ink = {}
+          for n, b in zip(names, B):
+              ink[n] = float(100 * b[valid].mean())
+          m["per_config_pct_ink"] = ink
+          if pairs:
+              pw = {}
+              for i, j in itertools.combinations(range(len(names)), 2):
+                  bi = B[i][valid]
+                  bj = B[j][valid]
+                  u = (bi | bj).sum()
+                  r = np.corrcoef(S[i][valid], S[j][valid])[0, 1]
+                  pw[names[i] + " vs " + names[j]] = {
+                      "agree_pct": float(100 * (bi == bj).mean()),
+                      "ink_iou": float((bi & bj).sum() / u) if u else None,
+                      "corr": float(r)}
+              m["pairwise"] = pw
+          return m, dis, std
+
+      def heat(a):
+          a = np.clip(a, 0, 1)
+          r = np.clip(a * 2, 0, 1)
+          g = np.clip(a * 2 - 1, 0, 1)
+          return np.stack([r, g, 0 * a], -1)
+
+      def png(a, path):
+          im = Image.fromarray((np.clip(a, 0, 1) * 255).astype(np.uint8))
+          im.thumbnail((2000, 2000))
+          im.save(path)
+
+      def u8(a):
+          return (np.clip(a, 0, 1) * 255).astype(np.uint8)
+
+      metrics = {"experiment": "E6-bulk", "segments": {}}
+      for seg in SEGS:
+          d = R + "/" + seg
+          a = d + "/analysis"
+          os.makedirs(a, exist_ok=True)
+          names = [seg + "__" + c + "__" + l for c in CK for l in LY]
+          S = np.stack([tifffile.imread(d + "/" + n + ".tif").squeeze()
+                        .astype(np.float32) / 255 for n in names])
+          valid = S.max(0) > 0
+          res = {"valid_pixels": int(valid.sum())}
+          m, dis, std = stats(S, names, valid, pairs=False)
+          res["all_9"] = m
+          tifffile.imwrite(a + "/all9_disagreement_map.tif", u8(dis))
+          tifffile.imwrite(a + "/all9_uncertainty_std.tif", u8(std * 2))
+          tifffile.imwrite(a + "/all9_ensemble_mean.tif", u8(S.mean(0)))
+          png(heat(dis.astype(np.float32)), a + "/all9_disagreement_map.png")
+          png(heat(std / max(float(std.max()), 1e-6)), a + "/all9_uncertainty_std.png")
+          png(S.mean(0), a + "/all9_ensemble_mean.png")
+          sens = {}
+          for t in [0.4, 0.5, 0.6]:
+              B = S > t
+              v = B.mean(0)
+              dd = (v > 0) & (v < 1)
+              sens[str(t)] = {
+                  "pct_pixels_disagree": float(100 * dd[valid].mean()),
+                  "mean_pct_ink": float(100 * B[:, valid].mean())}
+          res["sensitivity"] = sens
+          ix = [names.index(seg + "__" + c + "__L06-22") for c in CK]
+          m, dis, _ = stats(S[ix], [names[i] for i in ix], valid)
+          res["vary_checkpoint"] = m
+          png(heat(dis.astype(np.float32)), a + "/vary_checkpoint_disagreement.png")
+          by = {}
+          for c in CK:
+              ix = [names.index(seg + "__" + c + "__" + l) for l in LY]
+              m, dis, _ = stats(S[ix], [names[i] for i in ix], valid)
+              by[c] = m
+              if c == "ck075k":
+                  png(heat(dis.astype(np.float32)), a + "/vary_depth_disagreement.png")
+          res["vary_depth"] = by["ck075k"]
+          res["vary_depth_by_checkpoint"] = by
+          for n, s in zip(names, S):
+              png(s, a + "/pred_" + n + ".png")
+          if seg == "w024":
+              chk = {}
+              for c in CK:
+                  f = E2 + "/w024_step-" + STEP[c] + ".tif"
+                  if os.path.exists(f):
+                      x = tifffile.imread(f).squeeze().astype(np.float32)
+                      y = S[names.index("w024__" + c + "__L06-22")] * 255
+                      if x.shape == y.shape:
+                          chk[c] = {"corr": float(np.corrcoef(x.ravel(), y.ravel())[0, 1]),
+                                    "max_abs_diff_0_255": float(np.abs(x - y).max())}
+              res["check_L06-22_vs_E2_default"] = chk
+          json.dump(res, open(a + "/metrics.json", "w"), indent=2)
+          metrics["segments"][seg] = res
+          del S
+
+      T = [json.load(open(f)) for f in glob.glob(R + "/*/timing_*.json")]
+      def nlayers(x):
+          f = R + "/" + x["segment"] + "/log_" + x["name"] + ".txt"
+          for line in open(f):
+              if "indices=[" in line:
+                  return len(line.split("indices=[")[1].split("]")[0].split(","))
+          return None
+      for x in T:
+          x["n_layers"] = nlayers(x)
+      wall = max(x["end"] for x in T) - min(x["start"] for x in T)
+      tot = sum(x["wall_clock_s"] for x in T)
+      nodes = {}
+      for x in T:
+          nodes[x["node"]] = nodes.get(x["node"], 0) + 1
+      util, pw = [], []
+      for f in glob.glob(R + "/*/gpu_*.csv"):
+          for line in open(f):
+              p = [q.strip() for q in line.split(",")]
+              try:
+                  util.append(float(p[1]))
+              except Exception:
+                  pass
+              try:
+                  pw.append(float(p[2]))
+              except Exception:
+                  pass
+      summ = {"experiment": "E6-bulk", "tasks": len(T),
+              "sum_task_seconds": tot,
+              "experiment_wall_clock_s": wall,
+              "est_1node_wall_clock_s": tot,
+              "est_speedup_vs_1node": round(tot / wall, 3) if wall else None,
+              "tasks_per_node": nodes,
+              "per_task_s": {x["name"]: x["wall_clock_s"] for x in T},
+              "all_tasks_17_layers": all(x["n_layers"] == 17 for x in T),
+              "gpu_util_mean_pct": round(float(np.mean(util)), 1) if util else None,
+              "gpu_power_mean_w": round(float(np.mean(pw)), 1) if pw else None}
+      metrics["timing"] = summ
+      json.dump(summ, open(R + "/run_summary.json", "w"), indent=2)
+      json.dump(metrics, open(R + "/metrics.json", "w"), indent=2)
+      print(json.dumps(summ, indent=2))
+      for seg in SEGS:
+          r = metrics["segments"][seg]
+          print("==", seg, "==")
+          print(" all_9    disagree %.2f%%  std>0.2 %.3f%%" % (
+              r["all_9"]["pct_pixels_disagree"],
+              r["all_9"]["pct_pixels_high_uncertainty_std_gt_0.2"]))
+          print(" ckpt     disagree %.2f%%" % r["vary_checkpoint"]["pct_pixels_disagree"])
+          print(" depth    disagree %.2f%%" % r["vary_depth"]["pct_pixels_disagree"])
+          print(" sensitivity", json.dumps(r["sensitivity"]))
+          if "check_L06-22_vs_E2_default" in r:
+              print(" check vs E2", json.dumps(r["check_L06-22_vs_E2_default"]))
+      print("DONE")
+      PYEOF
+      echo "lines in script: $(wc -l < /tmp/a.py) (expect 161)"
+      python /tmp/a.py

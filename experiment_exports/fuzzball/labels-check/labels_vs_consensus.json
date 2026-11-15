@@ -1,0 +1,173 @@
+{
+  "segment": "w043",
+  "label_source": "/data/segments/w043/ink-labels/2.399um-volume-20260102150214/20260918/inklabels.zarr",
+  "label_array_used": "v3:2",
+  "label_arrays_available": [
+    [
+      "v3",
+      "0",
+      [
+        23760,
+        31600
+      ],
+      "uint8"
+    ],
+    [
+      "v3",
+      "1",
+      [
+        11880,
+        15800
+      ],
+      "uint8"
+    ],
+    [
+      "v3",
+      "2",
+      [
+        5940,
+        7900
+      ],
+      "uint8"
+    ],
+    [
+      "v3",
+      "3",
+      [
+        2970,
+        3950
+      ],
+      "uint8"
+    ],
+    [
+      "v3",
+      "4",
+      [
+        1485,
+        1975
+      ],
+      "uint8"
+    ],
+    [
+      "v3",
+      "5",
+      [
+        743,
+        988
+      ],
+      "uint8"
+    ]
+  ],
+  "label_shape_used": [
+    5940,
+    7900
+  ],
+  "label_unique_values_sample": [
+    0,
+    255
+  ],
+  "supervision_array_used": "v3:2",
+  "supervision_arrays_available": [
+    [
+      "v3",
+      "0",
+      [
+        23760,
+        31600
+      ],
+      "uint8"
+    ],
+    [
+      "v3",
+      "1",
+      [
+        11880,
+        15800
+      ],
+      "uint8"
+    ],
+    [
+      "v3",
+      "2",
+      [
+        5940,
+        7900
+      ],
+      "uint8"
+    ],
+    [
+      "v3",
+      "3",
+      [
+        2970,
+        3950
+      ],
+      "uint8"
+    ],
+    [
+      "v3",
+      "4",
+      [
+        1485,
+        1975
+      ],
+      "uint8"
+    ],
+    [
+      "v3",
+      "5",
+      [
+        743,
+        988
+      ],
+      "uint8"
+    ]
+  ],
+  "supervision_unique_values_sample": [
+    0,
+    255
+  ],
+  "label_resized_to": [
+    6120,
+    8120
+  ],
+  "supervised_pct_of_papyrus": 1.0,
+  "note": "all metrics restricted to supervised (labeled) region",
+  "labeled_ink_pct_of_papyrus": 44.26,
+  "zones": {
+    "agreed_ink": {
+      "pct_of_papyrus": 20.642,
+      "pct_of_zone_that_is_labeled_ink": 92.1,
+      "pct_of_labeled_ink_in_zone": 43.0
+    },
+    "agreed_background": {
+      "pct_of_papyrus": 38.404,
+      "pct_of_zone_that_is_labeled_ink": 18.4,
+      "pct_of_labeled_ink_in_zone": 16.0
+    },
+    "deep_conflict": {
+      "pct_of_papyrus": 0.0,
+      "pct_of_zone_that_is_labeled_ink": 0.0,
+      "pct_of_labeled_ink_in_zone": 0.0
+    },
+    "borderline": {
+      "pct_of_papyrus": 40.954,
+      "pct_of_zone_that_is_labeled_ink": 44.4,
+      "pct_of_labeled_ink_in_zone": 41.1
+    }
+  },
+  "vs_labels": {
+    "single_run_75k_p>0.5": {
+      "precision_pct": 80.2,
+      "recall_pct": 64.6
+    },
+    "average_of_9_p>0.5": {
+      "precision_pct": 80.2,
+      "recall_pct": 66.6
+    },
+    "unanimous_9_of_9": {
+      "precision_pct": 92.1,
+      "recall_pct": 43.0
+    }
+  }
+}

@@ -1,0 +1,116 @@
+# 01-infer-baseline.fz — FIRST REAL INK PREDICTION (Phase 1: Reproduce)
+#
+# Needs: stage-data.fz finished (checkpoints + segments on /data).
+# Job 1 "setup-env": one-time install of the official inference code into a
+#   Python environment saved on VAST (/data/venv). Re-runs skip what exists.
+# Job 2 "infer": runs ONE checkpoint on ONE segment on ONE GB10, records time
+#   and GPU utilisation, saves the ink image to /data/results/baseline/.
+#
+# To change the segment: edit SEG= in the infer script (w043 = smoke test).
+
+version: v4
+
+volumes:
+  data:
+    use: team5
+    name: prometheus-data
+
+jobs:
+  setup-env:
+    image:
+      uri: docker://nvcr.io/nvidia/pytorch:25.10-py3
+    mounts:
+      /data: data
+    resource:
+      cpu:
+        cores: 8
+      memory:
+        size: 32GB
+      devices:
+        nvidia.com/gpu: 1
+    script: |
+      #!/bin/bash
+      set -uo pipefail
+      cd /data
+      [ -d villa ] || git clone -q --depth 1 --branch merge-ink-pipelines https://github.com/ScrollPrize/villa.git
+      echo "villa commit: $(git -C villa rev-parse --short HEAD)" | tee /data/villa_commit.txt
+      # venv on VAST that re-uses the container's GPU-enabled PyTorch (2.9 nv25.10, built for GB10).
+      # pyproject pins torch==2.10.0 from PyPI -> we deliberately do NOT install it, and skip
+      # GUI/test packages (napari, pyqt6, pytest) that inference does not need.
+      [ -x /data/venv/bin/python ] || python -m venv --system-site-packages /data/venv
+      source /data/venv/bin/activate
+      echo "=== runtime dependencies (torch kept from container) ==="
+      pip install -q "timm==1.0.25" "numpy<=2.2" "scipy" "zarr==2.18.7" "numcodecs==0.15.1" \
+        "albumentations==2.0.8" "opencv-contrib-python-headless" pillow PyYAML tqdm wandb \
+        "diffusers>=0.37.0" "accelerate>=1.13.0" "numba" tifffile imagecodecs "einops>=0.8.2" \
+        "pytorch-optimizer" "connected-components-3d" pybind11 2>&1 | tail -5
+      echo "=== local packages (no deps, so torch is never replaced) ==="
+      if [ -d /data/villa/vesuvius ]; then pip install -q --no-deps -e /data/villa/vesuvius 2>&1 | tail -3
+      else pip install -q --no-deps vesuvius 2>&1 | tail -3; fi
+      pip install -q --no-deps -e /data/villa/ink-detection 2>&1 | tail -3
+      echo "=== auto-fix missing modules (checks every module the inference path imports) ==="
+      cd /data/villa/ink-detection
+      LAST=""
+      for i in $(seq 1 25); do
+        OUTP=$(python -c "import vesuvius; import vesuvius.models.build.build_network_from_config; import koine_machines.models.make_model; import koine_machines.inference.infer" 2>&1)
+        ERR=$(echo "$OUTP" | grep -oE "No module named '[^']+'" | head -1 | sed "s/No module named '//; s/'//")
+        if [ -z "$ERR" ]; then echo "all imports OK"; break; fi
+        MOD=${ERR%%.*}
+        if [ "$MOD" = "$LAST" ]; then echo "!! could not fix '$MOD' automatically:"; echo "$OUTP" | tail -5; break; fi
+        LAST=$MOD
+        case $MOD in
+          cv2) PKG=opencv-contrib-python-headless;; yaml) PKG=PyYAML;; PIL) PKG=pillow;;
+          sklearn) PKG=scikit-learn;; skimage) PKG=scikit-image;; nrrd) PKG=pynrrd;;
+          cc3d) PKG=connected-components-3d;; magic) PKG=python-magic;; SimpleITK) PKG=SimpleITK;;
+          *) PKG=$MOD;;
+        esac
+        echo "missing module '$MOD' -> pip install $PKG"
+        pip install -q "$PKG" 2>&1 | tail -2
+      done
+      echo "=== check ==="
+      python - <<'EOF'
+      import torch
+      print("torch", torch.__version__, "| cuda available:", torch.cuda.is_available())
+      import koine_machines.inference.infer
+      import vesuvius.models.build.build_network_from_config
+      print("koine_machines + vesuvius import: OK")
+      EOF
+      echo "=== inference options (for Person D / depth windows) ==="
+      python -m koine_machines.inference.infer --help 2>&1 | head -60
+      pip freeze > /data/venv_freeze.txt
+
+  infer:
+    depends-on:
+      - name: setup-env
+        status: FINISHED
+    image:
+      uri: docker://nvcr.io/nvidia/pytorch:25.10-py3
+    mounts:
+      /data: data
+    resource:
+      cpu:
+        cores: 12
+      memory:
+        size: 48GB
+      devices:
+        nvidia.com/gpu: 1
+    script: |
+      #!/bin/bash
+      set -euo pipefail
+      SEG=w043
+      source /data/venv/bin/activate
+      cd /data/villa/ink-detection
+      CKPT=$(ls /data/models/ink_9um/hybrid_3d2d-seed42/*.pth | sort | tail -1)
+      NAME=$(basename "$CKPT" .pth)
+      OUT=/data/results/baseline; mkdir -p $OUT
+      echo "segment=$SEG checkpoint=$NAME node=$(hostname)"
+      du -sh /data/segments/$SEG/surface.zarr
+      # sample GPU utilisation every 5 s while inference runs
+      nvidia-smi --query-gpu=timestamp,utilization.gpu,memory.used,power.draw --format=csv -l 5 > $OUT/gpu_${SEG}_${NAME}.csv &
+      MON=$!
+      START=$(date +%s)
+      python -m koine_machines.inference.infer /data/segments/$SEG/surface.zarr "$CKPT" $OUT/${SEG}_${NAME}.tif --no-compile 2>&1 | tee $OUT/log_${SEG}_${NAME}.txt
+      END=$(date +%s)
+      kill $MON || true
+      printf '{"segment":"%s","checkpoint":"%s","node":"%s","wall_clock_s":%d}\n' $SEG $NAME $(hostname) $((END-START)) | tee $OUT/timing_${SEG}_${NAME}.json
+      ls -lh $OUT

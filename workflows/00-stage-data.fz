@@ -1,0 +1,84 @@
+# stage-data.fz — pull everything the experiment needs onto the shared volume, ONCE.
+#
+# Result on the prometheus-data volume:
+#   /data/models/ink_9um/hybrid_3d2d-seed42/  <- 3 checkpoints (first, middle, last)
+#   /data/segments/<wXXX>/surface.zarr        <- the page (AI input)
+#   /data/segments/<wXXX>/ink-detection/      <- official prediction (reference image)
+#   /data/segments/<wXXX>/ink-labels/         <- hand labels (if the segment has them)
+#   /data/segments.txt                        <- list of staged pages, for later jobs
+#   /data/manifest.txt                        <- exact sources + sizes (reproducibility)
+# Safe to re-run: sync skips files it already has.
+
+version: v4
+
+volumes:
+  data:
+    use: team5
+    name: prometheus-data
+
+jobs:
+  stage:
+    image:
+      uri: docker://python:3.11
+    mounts:
+      /data: data
+    resource:
+      cpu:
+        cores: 8
+      memory:
+        size: 8GB
+    policy:
+      timeout:
+        execute: 3h
+    script: |
+      #!/bin/bash
+      set -euo pipefail
+      pip install --quiet awscli huggingface_hub
+      aws configure set default.s3.max_concurrent_requests 32
+
+      BUCKET=s3://vesuvius-challenge-open-data/PHerc0139/segments
+      VOL=20250728140407                 # the 9.362um scan the model expects
+      SEGMENTS="w043 w035 w024"          # w043 = smoke test, w035 = baseline, w024 = held out
+
+      mkdir -p /data/segments /data/models
+      : > /data/segments.txt
+      echo "staged $(date -u)" > /data/manifest.txt
+
+      # ---- 1. The AI: first, middle and last checkpoint ----
+      python - <<'PYEOF'
+      from huggingface_hub import list_repo_files, hf_hub_download
+      files = sorted(f for f in list_repo_files("scrollprize/ink_9um")
+                     if f.startswith("hybrid_3d2d-seed42/") and f.endswith(".pth"))
+      pick = [files[0], files[len(files)//2], files[-1]]
+      print("checkpoints:", pick)
+      for f in pick:
+          hf_hub_download("scrollprize/ink_9um", f, local_dir="/data/models/ink_9um")
+      with open("/data/manifest.txt", "a") as m:
+          m.write("checkpoints: " + ", ".join(pick) + "\n")
+      PYEOF
+
+      # ---- 2. The pages ----
+      for W in $SEGMENTS; do
+        FOLDER=$(aws s3 ls "$BUCKET/" --no-sign-request | awk '{print $2}' | grep -- "-${W}_" | head -1 | tr -d '/' || true)
+        if [ -z "$FOLDER" ]; then echo "!! no folder for $W, skipping"; continue; fi
+
+        ZARR=$(aws s3 ls "$BUCKET/$FOLDER/surface-volumes/" --no-sign-request \
+               | awk '{print $2}' | grep "9.362um" | grep "$VOL" | head -1 | tr -d '/' || true)
+        if [ -z "$ZARR" ]; then echo "!! $W has no 9.362um surface volume from scan $VOL, skipping"; continue; fi
+
+        echo "== $W  ($FOLDER/$ZARR)"
+        aws s3 ls "$BUCKET/$FOLDER/surface-volumes/$ZARR/" --recursive --summarize --human-readable --no-sign-request | tail -2
+
+        DEST=/data/segments/$W
+        aws s3 sync --no-sign-request --only-show-errors "$BUCKET/$FOLDER/surface-volumes/$ZARR" "$DEST/surface.zarr"
+        aws s3 sync --no-sign-request --only-show-errors "$BUCKET/$FOLDER/ink-detection" "$DEST/ink-detection" || true
+        aws s3 sync --no-sign-request --only-show-errors "$BUCKET/$FOLDER/ink-labels"    "$DEST/ink-labels"    || true
+
+        echo "$DEST/surface.zarr" >> /data/segments.txt
+        echo "$W: $BUCKET/$FOLDER/surface-volumes/$ZARR  ($(du -sh $DEST/surface.zarr | cut -f1))" >> /data/manifest.txt
+      done
+
+      # ---- 3. Report ----
+      echo; cat /data/manifest.txt
+      echo; find /data/models -name '*.pth' -exec ls -lh {} \;
+      echo; du -sh /data/segments/*/*
