@@ -1,0 +1,42 @@
+version: v4
+jobs:
+  summary:
+    image:
+      uri: docker://python:3.11
+    resource:
+      cpu:
+        cores: 1
+      memory:
+        size: 2GB
+    script: >
+      #!/bin/bash
+
+      python - <<'EOF'
+
+      import json, glob
+
+      out = {}
+
+      for run in ["par2", "seq1"]:
+          d = f"/data/results/sweep/w024/{run}"
+          t = sorted((json.load(open(f)) for f in glob.glob(d + "/timing_*.json")), key=lambda x: x["start"])
+          s = {"run": run, "tasks": len(t),
+               "per_task_s": [x["wall_clock_s"] for x in t],
+               "sum_task_seconds": sum(x["wall_clock_s"] for x in t),
+               "experiment_wall_clock_s": max(x["end"] for x in t) - min(x["start"] for x in t)}
+          json.dump(s, open(d + "/run_summary.json", "w"), indent=2)
+          out[run] = s
+      out["measured_speedup_seq1_over_par2"] =
+      round(out["seq1"]["experiment_wall_clock_s"] /
+      out["par2"]["experiment_wall_clock_s"], 3)
+
+      print(json.dumps(out, indent=2))
+
+      EOF
+    mounts:
+      /data:
+        volume: data
+volumes:
+  data:
+    name: prometheus-data
+    use: team5

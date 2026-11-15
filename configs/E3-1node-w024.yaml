@@ -1,0 +1,159 @@
+version: v4
+jobs:
+  sweep:
+    image:
+      uri: docker://nvcr.io/nvidia/pytorch:25.10-py3
+    resource:
+      cpu:
+        cores: 12
+      memory:
+        size: 48GB
+      devices:
+        nvidia.com/gpu: 1
+    task-array:
+      start: 1
+      end: 3
+      concurrency: 1
+    script: >
+      #!/bin/bash
+
+      set -euo pipefail
+
+      SEG=w024
+
+      RUN=seq1
+
+      source /data/venv/bin/activate
+
+      cd /data/villa/ink-detection
+
+      CKPTS=($(ls /data/models/ink_9um/hybrid_3d2d-seed42/*.pth | sort))
+
+      CKPT=${CKPTS[$((FB_TASK_ID-1))]}
+
+      NAME=$(basename "$CKPT" .pth)
+
+      OUT=/data/results/sweep/$SEG/$RUN; mkdir -p $OUT
+
+      echo "task=$FB_TASK_ID segment=$SEG checkpoint=$NAME node=$(hostname)
+      run=$RUN"
+
+      nvidia-smi --query-gpu=timestamp,utilization.gpu,memory.used,power.draw
+      --format=csv -l 5 > $OUT/gpu_${NAME}.csv &
+
+      MON=$!
+
+      START=$(date +%s)
+
+      python -m koine_machines.inference.infer /data/segments/$SEG/surface.zarr
+      "$CKPT" $OUT/${SEG}_${NAME}.tif --no-compile 2>&1 | tee
+      $OUT/log_${NAME}.txt
+
+      END=$(date +%s)
+
+      kill $MON || true
+
+      printf
+      '{"task":%s,"segment":"%s","checkpoint":"%s","node":"%s","run":"%s","start":%d,"end":%d,"wall_clock_s":%d}\n'
+      \
+        $FB_TASK_ID $SEG $NAME $(hostname) $RUN $START $END $((END-START)) | tee $OUT/timing_${NAME}.json
+    mounts:
+      /data:
+        volume: data
+  analyze:
+    image:
+      uri: docker://nvcr.io/nvidia/pytorch:25.10-py3
+    resource:
+      cpu:
+        cores: 8
+      memory:
+        size: 48GB
+    script: >
+      #!/bin/bash
+
+      set -euo pipefail
+
+      SEG=w024
+
+      RUN=par2
+
+      DIR=/data/results/sweep/$SEG/$RUN
+
+      source /data/venv/bin/activate
+
+      python - "$DIR" "$SEG" <<'EOF'
+
+      import sys, glob, json, itertools, os
+
+      import numpy as np, tifffile
+
+      from PIL import Image
+
+      d, seg = sys.argv[1], sys.argv[2]
+
+      out = d + "/analysis"; os.makedirs(out, exist_ok=True)
+
+      # timing: first task start -> last task end
+
+      t = [json.load(open(f)) for f in glob.glob(d + "/timing_*.json")]
+
+      summ = {"run": t[0]["run"], "tasks": len(t), "sum_task_seconds":
+      sum(x["wall_clock_s"] for x in t),
+              "experiment_wall_clock_s": max(x["end"] for x in t) - min(x["start"] for x in t)}
+      json.dump(summ, open(d + "/run_summary.json", "w"), indent=2);
+      print(json.dumps(summ, indent=2))
+
+      # predictions
+
+      files = sorted(glob.glob(f"{d}/{seg}_*.tif"))
+
+      names = [os.path.basename(f)[:-4] for f in files]
+
+      S = np.stack([tifffile.imread(f).squeeze().astype(np.float32) / 255 for f
+      in files])
+
+      valid = S.max(0) > 0
+
+      B = S > 0.5
+
+      vote = B.mean(0); dis = (vote > 0) & (vote < 1); std = S.std(0)
+
+      m = {"configs": names, "valid_pixels": int(valid.sum()),
+           "pct_pixels_disagree": float(100 * dis[valid].mean()),
+           "mean_score_std": float(std[valid].mean()),
+           "pct_pixels_high_uncertainty_std_gt_0.2": float(100 * (std[valid] > 0.2).mean()),
+           "per_config_pct_ink": {n: float(100 * b[valid].mean()) for n, b in zip(names, B)}, "pairwise": {}}
+      for (i, a), (j, b) in itertools.combinations(enumerate(names), 2):
+          bi, bj = B[i][valid], B[j][valid]; u = (bi | bj).sum()
+          m["pairwise"][f"{a} vs {b}"] = {"agree_pct": float(100 * (bi == bj).mean()),
+              "ink_iou": float((bi & bj).sum() / u) if u else None,
+              "corr": float(np.corrcoef(S[i][valid], S[j][valid])[0, 1])}
+      json.dump(m, open(out + "/metrics.json", "w"), indent=2);
+      print(json.dumps(m, indent=2))
+
+      def png(a, name, heat=False):
+          a = np.clip(a, 0, 1)
+          im = Image.fromarray((np.stack([np.clip(a*2,0,1), np.clip(a*2-1,0,1), 0*a], -1) * 255).astype(np.uint8)) if heat \
+               else Image.fromarray((a * 255).astype(np.uint8))
+          im.thumbnail((2000, 2000)); im.save(f"{out}/{name}.png")
+      png(dis.astype(np.float32), "disagreement_map", True)
+
+      png(std / max(std.max(), 1e-6), "uncertainty_std", True)
+
+      png(S.mean(0), "ensemble_mean")
+
+      for n, a in zip(names, S): png(a, "pred_" + n)
+
+      print("wrote", sorted(os.listdir(out)))
+
+      EOF
+    depends-on:
+      - name: sweep
+        status: FINISHED
+    mounts:
+      /data:
+        volume: data
+volumes:
+  data:
+    name: prometheus-data
+    use: team5

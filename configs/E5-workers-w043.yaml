@@ -1,0 +1,68 @@
+version: v4
+jobs:
+  infer:
+    image:
+      uri: docker://nvcr.io/nvidia/pytorch:25.10-py3
+    resource:
+      cpu:
+        cores: 12
+      memory:
+        size: 48GB
+      devices:
+        nvidia.com/gpu: 1
+    script: >
+      #!/bin/bash
+
+      set -euo pipefail
+
+      SEG=w043
+
+      source /data/venv/bin/activate
+
+      cd /data/villa/ink-detection
+
+      CKPT=/data/models/ink_9um/hybrid_3d2d-seed42/step-075000.pth
+
+      OUT=/data/results/E5-workers/$SEG; mkdir -p $OUT
+
+      echo "E5: segment=$SEG checkpoint=step-075000 workers=8 batch=128
+      node=$(hostname)"
+
+      nvidia-smi --query-gpu=timestamp,utilization.gpu,memory.used,power.draw
+      --format=csv -l 5 > $OUT/gpu.csv &
+
+      MON=$!
+
+      START=$(date +%s)
+
+      python -m koine_machines.inference.infer /data/segments/$SEG/surface.zarr
+      "$CKPT" $OUT/${SEG}__ck075k__w8b128.tif \
+        --no-compile --num-workers 8 --batch-size 128 2>&1 | tee $OUT/log.txt
+      END=$(date +%s)
+
+      kill $MON || true
+
+      python - $OUT/gpu.csv <<'EOF'
+
+      import csv, sys
+
+      rows = list(csv.reader(open(sys.argv[1])))[1:]
+
+      u = [float(r[1].strip().split()[0]) for r in rows if len(r) > 1 and
+      r[1].strip()[0].isdigit()]
+
+      print(f"GPU utilisation: mean {sum(u)/len(u):.1f}%  max {max(u):.0f}% 
+      samples {len(u)}" if u else "no GPU samples")
+
+      EOF
+
+      printf
+      '{"experiment":"E5-workers","segment":"%s","workers":8,"batch":128,"wall_clock_s":%d}\n'
+      $SEG $((END-START)) | tee $OUT/timing.json
+    mounts:
+      /data:
+        volume: data
+volumes:
+  data:
+    name: prometheus-data
+    use: team5

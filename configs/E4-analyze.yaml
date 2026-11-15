@@ -1,0 +1,159 @@
+version: v4
+jobs:
+  analyze:
+    image:
+      uri: docker://nvcr.io/nvidia/pytorch:25.10-py3
+    resource:
+      cpu:
+        cores: 8
+      memory:
+        size: 48GB
+    script: >
+      #!/bin/bash
+
+      set -uo pipefail
+
+      source /data/venv/bin/activate
+
+      D=/data/results/E4-depth/w024
+
+      echo "== files =="; ls -la $D
+
+      echo "== layer lines =="; grep -h "Selected source layer" $D/log_*.txt ||
+      true
+
+      cat > /tmp/a.py <<'PYEOF'
+
+      import glob, json, itertools, os
+
+      import numpy as np, tifffile
+
+      from PIL import Image
+
+      d = "/data/results/E4-depth/w024"
+
+      out = d + "/analysis"
+
+      os.makedirs(out, exist_ok=True)
+
+      tf = glob.glob(d + "/timing_*.json")
+
+      t = [json.load(open(f)) for f in tf]
+
+      summ = {"experiment": "E4-depth", "tasks": len(t)}
+
+      summ["per_task_s"] = {x["layers"]: x["wall_clock_s"] for x in t}
+
+      summ["sum_task_seconds"] = sum(x["wall_clock_s"] for x in t)
+
+      t0 = min(x["start"] for x in t)
+
+      t1 = max(x["end"] for x in t)
+
+      summ["experiment_wall_clock_s"] = t1 - t0
+
+      json.dump(summ, open(d + "/run_summary.json", "w"), indent=2)
+
+      print(json.dumps(summ, indent=2))
+
+      files = sorted(glob.glob(d + "/w024__*.tif"))
+
+      names = [os.path.basename(f)[:-4] for f in files]
+
+      imgs = [tifffile.imread(f).squeeze() for f in files]
+
+      S = np.stack([a.astype(np.float32) / 255 for a in imgs])
+
+      valid = S.max(0) > 0
+
+      B = S > 0.5
+
+      vote = B.mean(0)
+
+      dis = (vote > 0) & (vote < 1)
+
+      std = S.std(0)
+
+      m = {"configs": names}
+
+      m["valid_pixels"] = int(valid.sum())
+
+      m["pct_pixels_disagree"] = float(100 * dis[valid].mean())
+
+      m["mean_score_std"] = float(std[valid].mean())
+
+      hi = (std[valid] > 0.2).mean()
+
+      m["pct_pixels_high_uncertainty_std_gt_0.2"] = float(100 * hi)
+
+      ink = {}
+
+      for n, b in zip(names, B):
+          ink[n] = float(100 * b[valid].mean())
+      m["per_config_pct_ink"] = ink
+
+      pw = {}
+
+      for i, j in itertools.combinations(range(len(names)), 2):
+          bi = B[i][valid]
+          bj = B[j][valid]
+          u = (bi | bj).sum()
+          r = np.corrcoef(S[i][valid], S[j][valid])[0, 1]
+          pw[names[i] + " vs " + names[j]] = {
+              "agree_pct": float(100 * (bi == bj).mean()),
+              "ink_iou": float((bi & bj).sum() / u) if u else None,
+              "corr": float(r)}
+      m["pairwise"] = pw
+
+      ref = "/data/results/sweep/w024/par2/w024_step-075000.tif"
+
+      dflt = [f for f in files if "L06-22" in f]
+
+      if os.path.exists(ref) and dflt:
+          a = tifffile.imread(ref).squeeze().astype(np.float32)
+          b = tifffile.imread(dflt[0]).squeeze().astype(np.float32)
+          if a.shape == b.shape:
+              c = np.corrcoef(a.ravel(), b.ravel())[0, 1]
+              m["check_default_vs_E2"] = {
+                  "corr": float(c),
+                  "max_abs_diff_0_255": float(np.abs(a - b).max())}
+      json.dump(m, open(out + "/metrics.json", "w"), indent=2)
+
+      print(json.dumps(m, indent=2))
+
+      tifffile.imwrite(out + "/disagreement_map.tif", (dis *
+      255).astype(np.uint8))
+
+      sd = (np.clip(std * 2, 0, 1) * 255).astype(np.uint8)
+
+      tifffile.imwrite(out + "/uncertainty_std.tif", sd)
+
+      def heat(a):
+          a = np.clip(a, 0, 1)
+          r = np.clip(a * 2, 0, 1)
+          g = np.clip(a * 2 - 1, 0, 1)
+          return np.stack([r, g, 0 * a], -1)
+      def png(a, name):
+          im = Image.fromarray((a * 255).astype(np.uint8))
+          im.thumbnail((2000, 2000))
+          im.save(out + "/" + name + ".png")
+      png(heat(dis.astype(np.float32)), "disagreement_map")
+
+      png(heat(std / max(float(std.max()), 1e-6)), "uncertainty_std")
+
+      for n, a in zip(names, S):
+          png(np.clip(a, 0, 1), "pred_" + n)
+      print("wrote", sorted(os.listdir(out)))
+
+      PYEOF
+
+      echo "== lines in script: $(wc -l < /tmp/a.py) (expect ~85) =="
+
+      python /tmp/a.py
+    mounts:
+      /data:
+        volume: data
+volumes:
+  data:
+    name: prometheus-data
+    use: team5
